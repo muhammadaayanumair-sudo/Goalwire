@@ -1,25 +1,12 @@
-<!DOCTYPE html>
-<html>
-<head>
-  <title>GOALWIRE ULTRA ⚽</title>
-  <link rel="stylesheet" href="style.css">
-</head>
-
-<body>
-
-<header>
-  ⚽ GOALWIRE ULTRA LIVE
-</header>
-
 <nav>
-  <button onclick="loadLive()">LIVE</button>
-  <button onclick="loadPL()">Premier League</button>
-  <button onclick="loadUCL()">UCL</button>
-  <button onclick="loadScorers()">Top Scorers</button>
+  <button onclick="loadLive()">🔴 LIVE</button>
+  <button onclick="loadLeague(39)">Premier League</button>
+  <button onclick="loadLeague(2)">UCL</button>
+  <button onclick="loadUpcoming()">📅 Upcoming</button>
+  <button onclick="loadScorers()">⚽ Scorers</button>
+  <button onclick="toggleAuto()">⏱ Auto Refresh</button>
 </nav>
 
+<div id="status"></div>
+<input id="searchBox" placeholder="Search team..." onkeyup="searchTeam()" />
 <section id="output"></section>
-
-<script src="script.js"></script>
-</body>
-</html>
