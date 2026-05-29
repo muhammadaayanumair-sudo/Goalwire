@@ -1,12 +1,56 @@
+body{
+  margin:0;
+  font-family:Arial;
+  background: radial-gradient(circle at top, #0b1220, #000);
+  color:white;
+}
+
+nav{
+  display:flex;
+  flex-wrap:wrap;
+  justify-content:center;
+  gap:8px;
+  padding:10px;
+}
+
+button{
+  padding:10px 12px;
+  border-radius:10px;
+  border:none;
+  background:#22c55e;
+  font-weight:bold;
+  cursor:pointer;
+}
+
+button:hover{
+  background:#16a34a;
+}
+
+#searchBox{
+  width:90%;
+  margin:10px auto;
+  display:block;
+  padding:10px;
+  border-radius:10px;
+  border:none;
+}
+
 .card{
-  background: linear-gradient(135deg, #1e293b, #0f172a);
+  background:rgba(30,41,59,0.9);
   margin:10px;
   padding:15px;
-  border-radius:15px;
-  box-shadow: 0 5px 15px rgba(0,0,0,0.4);
-  transition: 0.3s;
+  border-radius:14px;
+  transition:0.2s;
 }
 
 .card:hover{
-  transform: scale(1.02);
+  transform:scale(1.02);
+}
+
+.badge{
+  display:inline-block;
+  background:#ef4444;
+  padding:3px 8px;
+  border-radius:6px;
+  font-size:12px;
 }
