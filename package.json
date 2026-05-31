@@ -1,17 +1,23 @@
 {
-  "name": "goalwire-bot",
+  "name": "football-discord-bot",
   "version": "1.0.0",
+  "description": "A 20-in-1 master football tracking Discord bot",
+  "main": "dist/index.js",
   "scripts": {
     "build": "tsc",
-    "start": "node dist/hello.js"
+    "start": "node dist/index.js",
+    "dev": "ts-node src/index.ts"
   },
   "dependencies": {
-    "discord.js": "^14.15.3",
-    "dotenv": "^16.4.5",
-    "axios": "^1.7.7"
+    "axios": "^1.6.8",
+    "discord.js": "^14.14.1"
   },
   "devDependencies": {
-    "@types/node": "^22.7.4",
-    "typescript": "^5.6.3"
+    "@types/node": "^20.11.24",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.3.3"
+  },
+  "engines": {
+    "node": ">=18.0.0"
   }
 }
