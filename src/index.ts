@@ -1,7 +1,17 @@
 import { Client, GatewayIntentBits, Collection, REST, Routes, ChatInputCommandInteraction } from 'discord.js';
+import http from 'http';
 
 const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 const commands = new Collection<string, any>();
+
+// 🤖 KEEP-ALIVE SERVER: Keeps Railway from shutting your bot off!
+const PORT = process.env.PORT || 3000;
+http.createServer((req, res) => {
+  res.writeHead(200, { 'Content-Type': 'text/plain' });
+  res.end('GoalWire Bot Engine is Live and Running!');
+}).listen(PORT, () => {
+  console.log(`[Keep-Alive] Internal ping server listening on port ${PORT}`);
+});
 
 // 1. LOADER ENGINE - Automatically syncs valid files
 const commandNames = ['football'];
@@ -18,7 +28,7 @@ for (const name of commandNames) {
   }
 }
 
-// 2. CACHE-BUSTING DEPLOYMENT CYCLE
+// 2. DEPLOYMENT CYCLE
 client.once('ready', async () => {
   if (!client.user) return;
   console.log(`[Bot Online] Authenticated as ${client.user.tag}`);
@@ -33,13 +43,9 @@ client.once('ready', async () => {
 
   const rest = new REST({ version: '10' }).setToken(token);
   try {
-    console.log('[Deploy] Clearing stale states & rewriting global application commands...');
-    
+    console.log('[Deploy] Synchronizing global application commands...');
     const commandData = commands.map((cmd: any) => cmd.data.toJSON());
-    
-    // This forces Discord to completely wipe out any ghost parameters or dead menu layers
     await rest.put(Routes.applicationCommands(clientId), { body: commandData });
-    
     console.log('[Deploy] New command configurations pushed globally successfully!');
   } catch (err: any) {
     console.error('[Deploy Sync Error]', err.message);
