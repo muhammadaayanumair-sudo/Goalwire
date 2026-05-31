@@ -1,55 +1,65 @@
-import { Client, GatewayIntentBits, Collection, REST, Routes } from 'discord.js';
-import * as fs from 'fs';
+import { Client, GatewayIntentBits, Collection, REST, Routes, ChatInputCommandInteraction } from 'discord.js';
 import * as path from 'path';
 
 const client = new Client({ intents: [GatewayIntentBits.Guilds] });
-export const commands = new Collection<string, any>();
+const commands = new Collection<string, any>();
 
-// 1. LOAD COMMANDS CLEANLY
-const commandsPath = path.join(__dirname, 'commands');
-if (fs.existsSync(commandsPath)) {
-  const commandFiles = fs.readdirSync(commandsPath).filter(f => f.endsWith('.ts') || f.endsWith('.js'));
-  for (const file of commandFiles) {
-    const filePath = path.join(commandsPath, file);
-    const command = require(filePath);
-    if ('data' in command && 'execute' in command) {
-      commands.set(command.data.name, command);
-      console.log(`[Loaded Command]: /${command.data.name}`);
-    }
+// 1. MANUALLY REQUIRE YOUR FOOTBALL COMMAND (Zero folder loops, zero loading bugs!)
+try {
+  const footballCommand = require('./commands/football');
+  if (footballCommand && footballCommand.data) {
+    commands.set(footballCommand.data.name, footballCommand);
+    console.log(`[System] Clean loaded command: /${footballCommand.data.name}`);
   }
+} catch (e: any) {
+  console.error('[System Error] Could not find or read commands/football.ts:', e.message);
 }
 
-// 2. EMBEDDED EVENTS FOR ABSOLUTE STABILITY
-client.once('ready', async () => {
-  console.log(`[Bot Online] Logged in as ${client.user?.tag}`);
+// 2. STABLE BOT STARTUP (Uses clientReady to fix the warning in IMG_2262.png!)
+client.once('clientReady', async (c) => {
+  console.log(`[Bot Online] Logged in as ${c.user?.tag}`);
+  
   const token = process.env.DISCORD_TOKEN;
-  const clientId = client.user?.id;
-  if (!token || !clientId) return;
+  const clientId = c.user?.id;
+  if (!token || !clientId) {
+    console.error('[Deploy Error] Missing environment tokens.');
+    return;
+  }
 
   const rest = new REST({ version: '10' }).setToken(token);
   try {
+    console.log('[Deploy] Forcing command sync with Discord servers...');
     const commandData = commands.map((cmd: any) => cmd.data.toJSON());
     await rest.put(Routes.applicationCommands(clientId), { body: commandData });
-    console.log('[Deploy] Global slash commands synchronized!');
+    console.log('[Deploy] Slash commands synchronized perfectly!');
   } catch (error) {
-    console.error('[Deploy Error]', error);
+    console.error('[Deploy Sync Error]', error);
   }
 });
 
+// Fallback for older library versions just in case
+client.once('ready', () => {
+  if (!client.user) return;
+  console.log(`[Bot Online Fallback] Logged in as ${client.user.tag}`);
+});
+
+// 3. STABLE INTERACTION CREATOR
 client.on('interactionCreate', async (interaction) => {
   if (!interaction.isChatInputCommand()) return;
+
   const command = commands.get(interaction.commandName);
   if (!command) return;
 
   try {
-    await command.execute(interaction);
-  } catch (error) {
-    console.error(`[Runtime Crash] /${interaction.commandName}:`, error);
-    const replyPayload = { content: '❌ There was an internal error executing this command!', ephemeral: true };
+    await command.execute(interaction as ChatInputCommandInteraction);
+  } catch (error: any) {
+    console.error(`[Runtime Error] Error running /${interaction.commandName}:`, error);
+    const msg = { content: `❌ Command Error: ${error?.message || 'Unknown processing crash'}`, ephemeral: true };
+    
     if (interaction.deferred || interaction.replied) {
-      await interaction.followUp(replyPayload);
+      await interaction.followUp(msg);
     } else {
-      await interaction.reply(replyPayload);
+      await interaction.reply(msg);
     }
   }
 });
