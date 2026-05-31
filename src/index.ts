@@ -3,7 +3,7 @@ import { Client, GatewayIntentBits, Collection, REST, Routes, ChatInputCommandIn
 const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 const commands = new Collection<string, any>();
 
-// 1. PRE-LOAD ALL COMMANDS (Prevents Discord from freezing or timing out!)
+// 1. PRE-LOAD ALL COMMANDS Safely
 const commandNames = ['football', 'formation', 'cards', 'h2h'];
 
 for (const name of commandNames) {
@@ -14,12 +14,12 @@ for (const name of commandNames) {
       console.log(`[System Sync] Pre-loaded command: /${cmd.data.name}`);
     }
   } catch (error: any) {
-    // If a file is blank or missing, it logs a warning but keeps the rest of the bot running perfectly!
-    console.warn(`[System Warning] Skipping /${name}: File might be empty or missing.`);
+    // Variable explicitly read here to pass strict TypeScript compilation rules!
+    console.warn(`[System Warning] Skipping /${name}: ${error.message || 'File is empty or missing.'}`);
   }
 }
 
-// 2. STABLE BOT STARTUP (Fixes the ready/clientReady naming warning!)
+// 2. STABLE BOT STARTUP 
 client.once('clientReady', async (readyClient) => {
   console.log(`[Bot Online] Logged in as ${readyClient.user?.tag}`);
   
@@ -36,8 +36,8 @@ client.once('clientReady', async (readyClient) => {
     const commandData = commands.map((cmd: any) => cmd.data.toJSON());
     await rest.put(Routes.applicationCommands(clientId), { body: commandData });
     console.log('[Deploy] All application commands synchronized perfectly!');
-  } catch (error) {
-    console.error('[Deploy Sync Error]', error);
+  } catch (err: any) {
+    console.error('[Deploy Sync Error]', err.message);
   }
 });
 
@@ -53,7 +53,6 @@ client.on('interactionCreate', async (interaction) => {
 
   const command = commands.get(interaction.commandName);
   
-  // If the command is registered to Discord but has no code written yet
   if (!command) {
     return interaction.reply({ 
       content: `🚧 The \`/${interaction.commandName}\` command infrastructure is registered, but its file is empty or still building on Railway!`, 
