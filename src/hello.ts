@@ -24,16 +24,16 @@ const POPULAR_TEAMS = [
 ]
 
 const get = async (url: string) => {
-  const res = await axios.get(`${BASE_URL}${url}`, {
-    headers: { 'x-apisports-key': API_KEY },
-    timeout: 10000
-  })
-  return res.data.response
-}
-
-const getTeamId = async (name: string): Promise<number | null> => {
-  const teams = await get(`/teams?search=${encodeURIComponent(name)}`)
-  return teams?.[0]?.team?.id || null
+  try {
+    const res = await axios.get(`${BASE_URL}${url}`, {
+      headers: { 'x-apisports-key': API_KEY },
+      timeout: 10000
+    })
+    return res.data.response
+  } catch (error) {
+    console.error(`API Error on ${url}:`, error)
+    return null
+  }
 }
 
 const commands = [
@@ -65,8 +65,12 @@ const commands = [
 ].map(c => c.toJSON())
 
 client.once('ready', async () => {
-  await rest.put(Routes.applicationCommands(client.user!.id), { body: commands })
-  console.log(`✅ GoalWire online - Season ${SEASON}/${SEASON+1}`)
+  try {
+    await rest.put(Routes.applicationCommands(client.user!.id), { body: commands })
+    console.log(`✅ GoalWire online - Season ${SEASON}/${SEASON+1}`)
+  } catch (error) {
+    console.error('Error registering application commands:', error)
+  }
 })
 
 client.on('interactionCreate', async interaction => {
@@ -79,8 +83,10 @@ client.on('interactionCreate', async interaction => {
       if (value.length >= 2 && choices.length < 20) {
         try {
           const api = await get(`/teams?search=${encodeURIComponent(value)}`)
-          const extra = api.map((t: any) => t.team.name).filter((n: string) =>!choices.includes(n))
-          choices = [...choices,...extra].slice(0, 25)
+          if (api) {
+            const extra = api.map((t: any) => t.team.name).filter((n: string) => !choices.includes(n))
+            choices = [...choices, ...extra]
+          }
         } catch {}
       }
       return interaction.respond(choices.slice(0, 25).map(c => ({ name: c, value: c })))
@@ -90,8 +96,9 @@ client.on('interactionCreate', async interaction => {
       if (value.length < 3) return interaction.respond([])
       try {
         const players = await get(`/players?search=${encodeURIComponent(value)}&season=${SEASON}`)
+        if (!players) return interaction.respond([])
         const choices = players.slice(0, 25).map((p: any) => ({
-          name: `${p.player.name} - ${p.statistics[0].team.name}`,
+          name: `${p.player.name} - ${p.statistics[0]?.team?.name || 'Unknown'}`,
           value: p.player.name
         }))
         return interaction.respond(choices)
@@ -109,12 +116,50 @@ client.on('interactionCreate', async interaction => {
   try {
     if (cmd === 'live') {
       const matches = await get('/fixtures?live=all')
-      if (!matches?.length) return interaction.editReply('No live matches right now')
+      if (!matches || !matches.length) return interaction.editReply('No live matches right now')
+      
       const embed = new EmbedBuilder().setTitle('🔴 LIVE NOW').setColor(0xFF0000)
-      matches.slice(0, 10).forEach((m: any) => embed.addFields({ name: `${m.teams.home.name} ${m.goals.home?? 0}-${m.goals.away?? 0} ${m.teams.away.name}`, value: `${m.league.name} • ${m.fixture.status.elapsed}'`, inline: false }))
+      matches.slice(0, 10).forEach((m: any) => {
+        embed.addFields({ 
+          name: `${m.teams.home.name} ${m.goals.home ?? 0}-${m.goals.away ?? 0} ${m.teams.away.name}`, 
+          value: `${m.league.name} • ${m.fixture.status.elapsed}'`, 
+          inline: false 
+        })
+      })
       return interaction.editReply({ embeds: [embed] })
     }
 
     if (cmd === 'table') {
-      const league = interaction.options.getString('league', true)
-      const data = await get(`/standings?league
+      const leagueName = interaction.options.getString('league', true)
+      const leagueId = LEAGUES[leagueName]
+      
+      const data = await get(`/standings?league=${leagueId}&season=${SEASON}`)
+      if (!data || !data[0]?.league?.standings?.[0]) return interaction.editReply('Could not fetch standings table data.')
+      
+      const standings = data[0].league.standings[0]
+      const embed = new EmbedBuilder().setTitle(`📊 ${leagueName} Standings ${SEASON}/${SEASON+1}`).setColor(0x00FF00)
+      
+      let tableText = '`Pos Team            P   GD  PTS`\n'
+      standings.slice(0, 15).forEach((teamData: any) => {
+        const pos = String(teamData.rank).padEnd(3, ' ')
+        const name = teamData.team.name.substring(0, 15).padEnd(15, ' ')
+        const played = String(teamData.all.played).padEnd(3, ' ')
+        const gd = String(teamData.goalsDiff).padEnd(4, ' ')
+        const pts = String(teamData.points)
+        tableText += `\`${pos}${name}${played}${gd}${pts}\`\n`
+      })
+      
+      embed.setDescription(tableText)
+      return interaction.editReply({ embeds: [embed] })
+    }
+
+    // Catch-all handler for commands you haven't fully written yet
+    return interaction.editReply(`🚧 The \`/${cmd}\` command infrastructure is valid, but full data rendering logic is not written yet!`)
+
+  } catch (error) {
+    console.error('Command Execution Error:', error)
+    return interaction.editReply('❌ An error occurred while processing this command.')
+  }
+})
+
+client.login(process.env.DISCORD_TOKEN)
