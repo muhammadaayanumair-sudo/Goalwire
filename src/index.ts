@@ -3,74 +3,66 @@ import { Client, GatewayIntentBits, Collection, REST, Routes, ChatInputCommandIn
 const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 const commands = new Collection<string, any>();
 
-// 1. SAFE COMMAND LOOPER (Skips missing files automatically without crashing the build)
-const commandNames = ['football', 'formation', 'cards', 'h2h'];
+// 1. LOADER ENGINE - Automatically syncs valid files
+const commandNames = ['football'];
 
 for (const name of commandNames) {
   try {
-    // This dynamically checks if the file exists before trying to force load it
     const cmd = require(`./commands/${name}`);
     if (cmd && cmd.data && cmd.execute) {
       commands.set(cmd.data.name, cmd);
-      console.log(`[System Sync] Loaded command: /${cmd.data.name}`);
+      console.log(`[System Sync] Loaded command structure: /${cmd.data.name}`);
     }
   } catch (error: any) {
-    // If the file is missing or empty, it gracefully logs it instead of crashing Railway!
-    console.log(`[System Info] Command /${name} is not locally present. Skipping setup.`);
+    console.log(`[System Info] Command /${name} skipped.`);
   }
 }
 
-// 2. STABLE BOT STARTUP
-client.once('clientReady', async (readyClient) => {
-  console.log(`[Bot Online] Logged in as ${readyClient.user?.tag}`);
+// 2. CACHE-BUSTING DEPLOYMENT CYCLE
+client.once('ready', async () => {
+  if (!client.user) return;
+  console.log(`[Bot Online] Authenticated as ${client.user.tag}`);
   
   const token = process.env.DISCORD_TOKEN;
-  const clientId = readyClient.user?.id;
+  const clientId = client.user.id;
+  
   if (!token || !clientId) {
-    console.error('[Deploy Error] Missing environment tokens.');
+    console.error('[Deploy Error] Missing system tokens.');
     return;
   }
 
   const rest = new REST({ version: '10' }).setToken(token);
   try {
-    console.log('[Deploy] Synchronizing slash commands...');
+    console.log('[Deploy] Clearing stale states & rewriting global application commands...');
+    
     const commandData = commands.map((cmd: any) => cmd.data.toJSON());
+    
+    // This forces Discord to completely wipe out any ghost parameters or dead menu layers
     await rest.put(Routes.applicationCommands(clientId), { body: commandData });
-    console.log('[Deploy] Slash commands synchronized perfectly!');
+    
+    console.log('[Deploy] New command configurations pushed globally successfully!');
   } catch (err: any) {
     console.error('[Deploy Sync Error]', err.message);
   }
 });
 
-// Fallback ready listener
-client.once('ready', () => {
-  if (!client.user) return;
-  console.log(`[Bot Online Fallback] Logged in as ${client.user.tag}`);
-});
-
-// 3. INTERACTION HANDLER
+// 3. RUNTIME EXECUTION INTERCEPTOR
 client.on('interactionCreate', async (interaction) => {
   if (!interaction.isChatInputCommand()) return;
 
   const command = commands.get(interaction.commandName);
-  
-  if (!command) {
-    return interaction.reply({ 
-      content: `🚧 The \`/${interaction.commandName}\` command infrastructure is registered, but its file is empty or missing!`, 
-      ephemeral: true 
-    });
-  }
+  if (!command) return;
 
   try {
     await command.execute(interaction as ChatInputCommandInteraction);
   } catch (error: any) {
-    console.error(`[Runtime Error] Error running /${interaction.commandName}:`, error);
-    const errorPayload = { content: `❌ Command Error: ${error?.message || 'Unknown processing crash.'}`, ephemeral: true };
+    console.error(`[Runtime Error] /${interaction.commandName}:`, error);
+    const errText = `❌ Command Error: \`${error?.message || 'Data structure alignment crash.'}\``;
     
     if (interaction.deferred || interaction.replied) {
-      await interaction.followUp(errorPayload);
+      await interaction.editReply({ content: errText }).catch(() => {});
     } else {
-      await interaction.reply(errorPayload);
+      await interaction.reply({ content: errText, ephemeral: true }).catch(() => {});
     }
   }
 });
