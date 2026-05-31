@@ -14,7 +14,7 @@ import axios from 'axios';
 const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
 const API_KEY = process.env.API_FOOTBALL_KEY;
 const BASE_URL = 'https://api-sports.io';
-const SEASON = 2025; // Active season code
+const SEASON = 2025; 
 
 if (!DISCORD_TOKEN || !API_KEY) {
   console.error('❌ CRITICAL ERROR: Environment variables DISCORD_TOKEN or API_FOOTBALL_KEY are missing!');
@@ -55,7 +55,6 @@ const fetchSportsData = async (endpoint: string) => {
   }
 };
 
-// Helper utility to safely pull team structural profiles from autocomplete lookups
 const resolveTeamProfile = async (searchName: string) => {
   const data = await fetchSportsData(`/teams?search=${encodeURIComponent(searchName)}`);
   return data && data.length > 0 ? data[0] : null;
@@ -94,8 +93,9 @@ const commands = [
 
 client.once('ready', async () => {
   try {
+    await rest.put(Routes.applicationCommands(client.user!.id), { body: [] });
     await rest.put(Routes.applicationCommands(client.user!.id), { body: commands });
-    console.log(`✅ GoalWire online - Running script: hello.ts`);
+    console.log(`✅ GoalWire completely online and commands registered!`);
   } catch (error) {
     console.error('❌ Failed to push global slash commands:', error);
   }
@@ -166,3 +166,4 @@ client.on('interactionCreate', async (interaction) => {
       standings.slice(0, 15).forEach((item: any) => {
         const pos = String(item.rank).padEnd(3, ' ');
         const tName = (item.team?.name || 'Unknown').substring(0, 14).padEnd(15, ' ');
+        const p = String(item.all?.played ?? 0).padEnd(3, ' ');
