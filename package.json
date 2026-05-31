@@ -1,23 +1,16 @@
 {
-  "name": "football-discord-bot",
+  "name": "your-bot-name",
   "version": "1.0.0",
-  "description": "A 20-in-1 master football tracking Discord bot",
-  "main": "dist/index.js",
+  "main": "src/index.ts",
   "scripts": {
-    "build": "tsc",
-    "start": "node dist/index.js",
-    "dev": "ts-node src/index.ts"
+    "start": "ts-node src/index.ts",
+    "build": "tsc"
   },
   "dependencies": {
-    "axios": "^1.6.8",
-    "discord.js": "^14.14.1"
+    "discord.js": "^14.x.x"
   },
   "devDependencies": {
-    "@types/node": "^20.11.24",
-    "ts-node": "^10.9.2",
-    "typescript": "^5.3.3"
-  },
-  "engines": {
-    "node": ">=18.0.0"
+    "ts-node": "^10.x.x",
+    "typescript": "^5.x.x"
   }
 }
