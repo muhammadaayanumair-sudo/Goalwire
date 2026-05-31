@@ -167,3 +167,4 @@ client.on('interactionCreate', async (interaction) => {
         const pos = String(item.rank).padEnd(3, ' ');
         const tName = (item.team?.name || 'Unknown').substring(0, 14).padEnd(15, ' ');
         const p = String(item.all?.played ?? 0).padEnd(3, ' ');
+
