@@ -2,10 +2,11 @@
   "name": "your-bot-name",
   "version": "1.0.0",
   "main": "src/index.ts",
-  "scripts": {
+"scripts": {
     "start": "ts-node src/index.ts",
-    "build": "tsc"
-  },
+    "build": "tsc",
+    "deploy": "ts-node deploy-commands.ts"
+},
   "dependencies": {
     "discord.js": "^14.x.x"
   },
