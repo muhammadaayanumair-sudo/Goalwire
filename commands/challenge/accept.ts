@@ -2,9 +2,10 @@ import {
   SlashCommandBuilder,
   ChatInputCommandInteraction,
 } from "discord.js";
+import { isValidObjectId } from "mongoose";
 import type { Command } from "../../types/discord";
 import { challengeService, ChallengeError } from "../../services/fantasy/ChallengeService";
-import { errorEmbed, fantasyEmbed, successEmbed } from "../../utils/embeds";
+import { errorEmbed, fantasyEmbed } from "../../utils/embeds";
 import { EMOJIS } from "../../config/constants";
 import { logger } from "../../utils/logger";
 
@@ -32,6 +33,13 @@ const command: Command = {
     }
 
     const providedId = interaction.options.getString("challenge_id");
+
+    if (providedId && !isValidObjectId(providedId)) {
+      await interaction.editReply({
+        embeds: [errorEmbed("That doesn't look like a valid challenge ID. Copy it exactly from the challenge message.")],
+      });
+      return;
+    }
 
     try {
       let challengeId = providedId;
