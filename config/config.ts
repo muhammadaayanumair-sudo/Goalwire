@@ -38,10 +38,6 @@ export const config = {
       key: env.GROQ_API_KEY,
       model: "llama-3.3-70b-versatile",
     },
-    openai: {
-      key: env.OPENAI_API_KEY,
-      model: "gpt-4o-mini",
-    },
     mistral: {
       key: env.MISTRAL_API_KEY,
       model: "mistral-large-latest",
