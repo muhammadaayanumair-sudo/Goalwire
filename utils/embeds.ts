@@ -1,6 +1,6 @@
 import { EmbedBuilder, ColorResolvable } from "discord.js";
 import { COLORS } from "../config/colors";
-import { EMBED_LIMITS } from "../config/constants";
+import { EMBED_LIMITS, EMOJIS } from "../config/constants";
 
 interface BaseEmbedOptions {
   title?: string;
@@ -22,12 +22,6 @@ function truncate(text: string, max: number): string {
   return text.length > max ? `${text.slice(0, max - 3)}...` : text;
 }
 
-/**
- * Base builder. Every category-specific embed (fantasyEmbed, liveEmbed, etc.)
- * wraps this — the left-hand color bar Discord renders comes from setColor,
- * so consistent category colors (config/colors.ts) are what create the
- * "branded accent bar" look across every GoalX embed.
- */
 export function buildEmbed(options: BaseEmbedOptions): EmbedBuilder {
   const embed = new EmbedBuilder().setColor((options.color ?? COLORS.PRIMARY) as ColorResolvable);
 
@@ -96,13 +90,6 @@ export function partnerEmbed(options: BaseEmbedOptions): EmbedBuilder {
   return buildEmbed({ ...options, color: options.color ?? COLORS.PARTNER });
 }
 
-/**
- * Announcement-style embed for milestone/creation events —
- * e.g. "A new fantasy team has been created", partner activations.
- * Bold emoji-led title + short celebratory description, matching the
- * "🎉 A new team has been created!" pattern from polished football bots,
- * but in GoalX's own voice and color.
- */
 export function announcementEmbed(options: BaseEmbedOptions & { emoji?: string }): EmbedBuilder {
   const emoji = options.emoji ?? "🎉";
   return buildEmbed({
@@ -112,11 +99,175 @@ export function announcementEmbed(options: BaseEmbedOptions & { emoji?: string }
   });
 }
 
-/**
- * Goal/full-time style match event embed — bold headline, structured
- * scoreline, and a goal-scorer breakdown field. Used by live match
- * notifications and the /match command's overview view.
- */
+interface GoalScorer {
+  minute: string;
+  player: string;
+  team: string;
+  assist?: string;
+  isPenalty?: boolean;
+  isOwnGoal?: boolean;
+}
+
+interface MatchEventBase {
+  homeTeam: string;
+  awayTeam: string;
+  homeScore: number;
+  awayScore: number;
+  competition: string;
+}
+
+/** ⚽ Goal notification — fired the moment a goal event comes through the live poller. */
+export function goalEmbed(
+  options: MatchEventBase & {
+    scorerName: string;
+    scorerTeam: string;
+    minute: string;
+    assistName?: string;
+    isPenalty?: boolean;
+    isOwnGoal?: boolean;
+  },
+): EmbedBuilder {
+  const { scorerName, scorerTeam, minute, assistName, isPenalty, isOwnGoal, ...match } = options;
+
+  const goalTag = isOwnGoal ? " (Own Goal)" : isPenalty ? " (Penalty)" : "";
+  const assistLine = assistName ? `\nAssist: **${assistName}**` : "";
+
+  return buildEmbed({
+    title: `${EMOJIS.GOAL} GOAL! ${scorerTeam}`,
+    description: [
+      `**${scorerName}**${goalTag} scores at \`${minute}\`${assistLine}`,
+      "",
+      `**${match.homeTeam}** \`${match.homeScore}\` - \`${match.awayScore}\` **${match.awayTeam}**`,
+    ].join("\n"),
+    color: COLORS.GOAL,
+    footerText: `${match.competition} • GoalX Live`,
+  });
+}
+
+/** 🟨🟥 Card notification. */
+export function cardEmbed(
+  options: MatchEventBase & {
+    playerName: string;
+    playerTeam: string;
+    minute: string;
+    cardType: "yellow" | "red" | "second_yellow";
+  },
+): EmbedBuilder {
+  const { playerName, playerTeam, minute, cardType, ...match } = options;
+
+  const cardLabel =
+    cardType === "yellow" ? `${EMOJIS.CARD_YELLOW} Yellow Card` : cardType === "second_yellow" ? `${EMOJIS.CARD_YELLOW}${EMOJIS.CARD_YELLOW} Second Yellow — Sent Off` : `${EMOJIS.CARD_RED} Red Card`;
+
+  return buildEmbed({
+    title: cardLabel,
+    description: [
+      `**${playerName}** (${playerTeam}) at \`${minute}\``,
+      "",
+      `**${match.homeTeam}** \`${match.homeScore}\` - \`${match.awayScore}\` **${match.awayTeam}**`,
+    ].join("\n"),
+    color: cardType === "yellow" ? COLORS.YELLOW_CARD : COLORS.RED_CARD,
+    footerText: `${match.competition} • GoalX Live`,
+  });
+}
+
+/** 🔁 Substitution notification. */
+export function substitutionEmbed(
+  options: MatchEventBase & {
+    playerOut: string;
+    playerIn: string;
+    team: string;
+    minute: string;
+  },
+): EmbedBuilder {
+  const { playerOut, playerIn, team, minute, ...match } = options;
+
+  return buildEmbed({
+    title: `${EMOJIS.SUBSTITUTION} Substitution — ${team}`,
+    description: [
+      `\`${minute}\` **${playerIn}** replaces **${playerOut}**`,
+      "",
+      `**${match.homeTeam}** \`${match.homeScore}\` - \`${match.awayScore}\` **${match.awayTeam}**`,
+    ].join("\n"),
+    color: COLORS.INFO,
+    footerText: `${match.competition} • GoalX Live`,
+  });
+}
+
+/** 🩹 Injury / VAR review notification. */
+export function matchAlertEmbed(
+  options: MatchEventBase & {
+    alertType: "injury" | "var" | "penalty_awarded" | "penalty_missed";
+    detail: string;
+    minute: string;
+  },
+): EmbedBuilder {
+  const { alertType, detail, minute, ...match } = options;
+
+  const titleMap: Record<typeof alertType, string> = {
+    injury: `${EMOJIS.INJURY} Injury Stoppage`,
+    var: "📺 VAR Review",
+    penalty_awarded: "⚽ Penalty Awarded",
+    penalty_missed: "❌ Penalty Missed",
+  };
+
+  return buildEmbed({
+    title: titleMap[alertType],
+    description: [
+      `\`${minute}\` ${detail}`,
+      "",
+      `**${match.homeTeam}** \`${match.homeScore}\` - \`${match.awayScore}\` **${match.awayTeam}**`,
+    ].join("\n"),
+    color: COLORS.WARNING,
+    footerText: `${match.competition} • GoalX Live`,
+  });
+}
+
+/** 🏁 Kickoff / Half-time / Full-time status embeds, with full goal-scorer breakdown. */
+export function matchStatusEmbed(
+  options: MatchEventBase & {
+    status: "kickoff" | "halftime" | "fulltime";
+    goalScorers?: GoalScorer[];
+    venue?: string;
+  },
+): EmbedBuilder {
+  const { status, goalScorers, venue, ...match } = options;
+
+  const titleMap: Record<typeof status, string> = {
+    kickoff: `${EMOJIS.FOOTBALL} KICK-OFF!`,
+    halftime: "⏸️ HALF-TIME",
+    fulltime: "🔴 FULL-TIME",
+  };
+
+  const fields: { name: string; value: string; inline?: boolean }[] = [];
+
+  if (goalScorers && goalScorers.length > 0) {
+    fields.push({
+      name: `${EMOJIS.GOAL} Goals`,
+      value: goalScorers
+        .map((g) => {
+          const tag = g.isOwnGoal ? " (OG)" : g.isPenalty ? " (P)" : "";
+          const assist = g.assist ? ` — assist: ${g.assist}` : "";
+          return `\`${g.minute}\` **${g.player}**${tag} (${g.team})${assist}`;
+        })
+        .join("\n"),
+      inline: false,
+    });
+  }
+
+  if (venue) {
+    fields.push({ name: "Venue", value: venue, inline: true });
+  }
+
+  return buildEmbed({
+    title: titleMap[status],
+    description: `**${match.homeTeam}** \`${match.homeScore}\` - \`${match.awayScore}\` **${match.awayTeam}**`,
+    fields,
+    color: status === "fulltime" ? COLORS.SECONDARY : status === "halftime" ? COLORS.INFO : COLORS.LIVE,
+    footerText: `${match.competition} • GoalX Live`,
+  });
+}
+
+/** Legacy alias kept for backward compatibility with existing callers. */
 export function matchEventEmbed(options: {
   headline: string;
   homeTeam: string;
@@ -128,23 +279,12 @@ export function matchEventEmbed(options: {
   goalScorers?: { minute: string; player: string; team: string }[];
   isFullTime?: boolean;
 }): EmbedBuilder {
-  const {
-    headline,
-    homeTeam,
-    awayTeam,
-    homeScore,
-    awayScore,
-    competition,
-    minuteLabel,
-    goalScorers,
-    isFullTime,
-  } = options;
+  const { headline, minuteLabel, goalScorers, isFullTime, ...match } = options;
 
   const fields: { name: string; value: string; inline?: boolean }[] = [];
-
   if (goalScorers && goalScorers.length > 0) {
     fields.push({
-      name: "⚽ Goals",
+      name: `${EMOJIS.GOAL} Goals`,
       value: goalScorers.map((g) => `\`${g.minute}\` **${g.player}** (${g.team})`).join("\n"),
       inline: false,
     });
@@ -153,11 +293,49 @@ export function matchEventEmbed(options: {
   return buildEmbed({
     title: headline,
     description: [
-      `**${homeTeam}** \`${homeScore}\` - \`${awayScore}\` **${awayTeam}**`,
+      `**${match.homeTeam}** \`${match.homeScore}\` - \`${match.awayScore}\` **${match.awayTeam}**`,
       minuteLabel ? `\n${minuteLabel}` : "",
     ].join(""),
     fields,
     color: isFullTime ? COLORS.SECONDARY : COLORS.LIVE,
-    footerText: `${competition} • GoalX Live`,
+    footerText: `${match.competition} • GoalX Live`,
+  });
+}
+
+/** 🔮 Score prediction card — user locks in a scoreline prediction. */
+export function predictionEmbed(options: {
+  username: string;
+  homeScore: number;
+  awayScore: number;
+  fixtureLabel: string;
+}): EmbedBuilder {
+  return announcementEmbed({
+    emoji: "🔮",
+    title: "Prediction Locked In",
+    description: [
+      `**${options.username}** predicts:`,
+      `Home \`${options.homeScore}\` - \`${options.awayScore}\` Away`,
+      "",
+      options.fixtureLabel,
+    ].join("\n"),
+    color: COLORS.AI,
+  });
+}
+
+/** 🚨 Transfer news card. */
+export function transferNewsEmbed(options: {
+  headline: string;
+  summary: string;
+  source: string;
+  imageUrl?: string;
+  sourceUrl?: string;
+}): EmbedBuilder {
+  return buildEmbed({
+    title: `🚨 ${options.headline}`,
+    description: options.summary,
+    image: options.imageUrl,
+    url: options.sourceUrl,
+    color: COLORS.NEWS,
+    footerText: `Source: ${options.source} • GoalX News`,
   });
 }
