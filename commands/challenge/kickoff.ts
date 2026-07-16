@@ -25,7 +25,9 @@ const command: Command = {
   async execute(client, interaction: ChatInputCommandInteraction): Promise<void> {
     await interaction.deferReply();
 
-    if (!interaction.guildId) {
+    const guildId = interaction.guildId;
+
+    if (!guildId) {
       await interaction.editReply({
         embeds: [errorEmbed("This command can only be used inside a server.")],
       });
@@ -45,11 +47,7 @@ const command: Command = {
       let challengeId = providedId;
 
       if (!challengeId) {
-        const active = await challengeService.getActiveChallengesFor(
-          interaction.user.id,
-          interaction.guildId,
-        );
-
+        const active = await challengeService.getActiveChallengesFor(interaction.user.id, guildId);
         const accepted = active.filter((c) => c.status === "accepted");
 
         if (accepted.length === 0) {
@@ -102,7 +100,7 @@ const command: Command = {
         content: `<@${opponentId}>`,
         embeds: [embed],
       });
-    } catch (error) {
+    } catch (error: unknown) {
       logger.error("Error in /kickoff command", { error, userId: interaction.user.id });
 
       const message =
