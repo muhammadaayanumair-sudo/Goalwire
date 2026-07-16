@@ -85,7 +85,15 @@ export class RankingService {
     }
   }
 
-  public async recalculateLeagueStandings(leagueId: string): Promise<IFantasyLeague> {
+  /**
+   * Recalculates and persists standings for a league. Returns void rather than
+   * the league document — the populated `members` field (IFantasyTeam[] at
+   * runtime) is structurally incompatible with IFantasyLeague's schema type
+   * for members (ObjectId[]), so returning it typed as IFantasyLeague is a
+   * real type lie, not just a strictness nitpick. Callers that need the
+   * standings after recalculating should call getLeagueStandings() next.
+   */
+  public async recalculateLeagueStandings(leagueId: string): Promise<void> {
     const league = await FantasyLeague.findById(leagueId).populate<{
       members: IFantasyTeam[];
     }>("members");
@@ -109,8 +117,6 @@ export class RankingService {
       logger.error("Failed to save recalculated league standings", { error, leagueId });
       throw new RankingError("Could not update league standings.");
     }
-
-    return league;
   }
 
   public async getLeagueStandings(leagueId: string): Promise<IFantasyLeague["standings"]> {
