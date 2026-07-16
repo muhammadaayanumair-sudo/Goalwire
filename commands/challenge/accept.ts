@@ -25,7 +25,9 @@ const command: Command = {
   async execute(client, interaction: ChatInputCommandInteraction): Promise<void> {
     await interaction.deferReply();
 
-    if (!interaction.guildId) {
+    const guildId = interaction.guildId;
+
+    if (!guildId) {
       await interaction.editReply({
         embeds: [errorEmbed("This command can only be used inside a server.")],
       });
@@ -45,10 +47,7 @@ const command: Command = {
       let challengeId = providedId;
 
       if (!challengeId) {
-        const pending = await challengeService.getPendingChallengesFor(
-          interaction.user.id,
-          interaction.guildId,
-        );
+        const pending = await challengeService.getPendingChallengesFor(interaction.user.id, guildId);
 
         if (pending.length === 0) {
           await interaction.editReply({
@@ -84,7 +83,7 @@ const command: Command = {
       });
 
       await interaction.editReply({ embeds: [embed] });
-    } catch (error) {
+    } catch (error: unknown) {
       logger.error("Error in /accept command", { error, userId: interaction.user.id });
 
       const message =
