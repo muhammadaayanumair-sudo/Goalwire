@@ -1,0 +1,287 @@
+import { liveService } from "../services/football/LiveService";
+import { Server } from "../database/models/Server";
+import {
+  goalEmbed,
+  cardEmbed,
+  substitutionEmbed,
+  matchStatusEmbed,
+} from "../utils/embeds";
+import { logger } from "../utils/logger";
+import type { GoalXClient } from "../client/GoalXClient";
+import type { FootballFixture, FootballEvent } from "../types/football";
+
+const POLL_INTERVAL_MS = 60000;
+
+/**
+ * Tracks which events (by a stable composite key) have already been
+ * broadcast per fixture, so re-polling the same live match doesn't
+ * re-announce goals/cards that were already sent.
+ *
+ * This is the exact bug class already fixed once in GoalX's history
+ * (dedup Sets wiped on every cron tick because they were re-instantiated
+ * inside the callback) — here the Map lives in module scope, created once,
+ * and is only ever mutated, never replaced.
+ */
+const seenEventKeys = new Map<number, Set<string>>();
+const seenStatusKeys = new Map<number, Set<string>>();
+const finishedFixtures = new Set<number>();
+
+let isPolling = false;
+let intervalHandle: ReturnType<typeof setInterval> | null = null;
+
+function eventKey(event: FootballEvent): string {
+  return `${event.type}:${event.detail}:${event.time.elapsed}:${event.time.extra ?? 0}:${event.player.id}`;
+}
+
+export function startLiveUpdater(client: GoalXClient): void {
+  if (intervalHandle) {
+    logger.warn("Live updater already running, refusing to start a second instance");
+    return;
+  }
+
+  intervalHandle = setInterval(() => {
+    void pollLiveFixtures(client);
+  }, POLL_INTERVAL_MS);
+
+  logger.info("Live updater started", { intervalMs: POLL_INTERVAL_MS });
+}
+
+export function stopLiveUpdater(): void {
+  if (intervalHandle) {
+    clearInterval(intervalHandle);
+    intervalHandle = null;
+    logger.info("Live updater stopped");
+  }
+}
+
+async function pollLiveFixtures(client: GoalXClient): Promise<void> {
+  if (isPolling) {
+    logger.debug("Skipping live poll tick — previous tick still running");
+    return;
+  }
+
+  isPolling = true;
+
+  try {
+    const fixtures = await liveService.getLiveFixtures();
+
+    if (fixtures.length === 0) {
+      return;
+    }
+
+    const servers = await Server.find({
+      $or: [{ "channels.live": { $ne: null } }, { "channels.goals": { $ne: null } }],
+    }).lean();
+
+    if (servers.length === 0) {
+      return;
+    }
+
+    for (const fixture of fixtures) {
+      try {
+        await processFixture(client, fixture, servers);
+      } catch (error) {
+        logger.error("Failed to process fixture during live poll", {
+          error,
+          fixtureId: fixture.id,
+        });
+      }
+    }
+
+    cleanupFinishedFixtures(fixtures);
+  } catch (error) {
+    logger.error("Live poll tick failed", { error });
+  } finally {
+    isPolling = false;
+  }
+}
+
+async function processFixture(
+  client: GoalXClient,
+  fixture: FootballFixture,
+  servers: { guildId: string; channels: { live?: string; goals?: string } }[],
+): Promise<void> {
+  if (finishedFixtures.has(fixture.id)) return;
+
+  if (!seenEventKeys.has(fixture.id)) seenEventKeys.set(fixture.id, new Set());
+  if (!seenStatusKeys.has(fixture.id)) seenStatusKeys.set(fixture.id, new Set());
+
+  const eventSet = seenEventKeys.get(fixture.id)!;
+  const statusSet = seenStatusKeys.get(fixture.id)!;
+
+  await broadcastStatusChange(client, fixture, servers, statusSet);
+
+  const events = await liveService.getFixtureEvents(fixture.id);
+  const newEvents = events.filter((event) => !eventSet.has(eventKey(event)));
+
+  for (const event of newEvents) {
+    eventSet.add(eventKey(event));
+    await broadcastEvent(client, fixture, event, servers);
+  }
+
+  if (fixture.status.short === "FT" || fixture.status.short === "AET" || fixture.status.short === "PEN") {
+    finishedFixtures.add(fixture.id);
+  }
+}
+
+async function broadcastStatusChange(
+  client: GoalXClient,
+  fixture: FootballFixture,
+  servers: { guildId: string; channels: { live?: string; goals?: string } }[],
+  statusSet: Set<string>,
+): Promise<void> {
+  const statusKey = fixture.status.short;
+
+  const isKickoff = statusKey === "1H" && !statusSet.has("1H");
+  const isHalftime = statusKey === "HT" && !statusSet.has("HT");
+  const isFulltime = (statusKey === "FT" || statusKey === "AET" || statusKey === "PEN") && !statusSet.has(statusKey);
+
+  if (!isKickoff && !isHalftime && !isFulltime) return;
+
+  statusSet.add(statusKey);
+
+  const status = isKickoff ? "kickoff" : isHalftime ? "halftime" : "fulltime";
+
+  let goalScorers: { minute: string; player: string; team: string; assist?: string }[] | undefined;
+
+  if (isFulltime) {
+    try {
+      const events = await liveService.getFixtureEvents(fixture.id);
+      goalScorers = events
+        .filter((e) => e.type === "Goal")
+        .map((e) => ({
+          minute: e.time.extra ? `${e.time.elapsed}+${e.time.extra}'` : `${e.time.elapsed}'`,
+          player: e.player.name,
+          team: e.team.name,
+          assist: e.assist.name ?? undefined,
+        }));
+    } catch (error) {
+      logger.warn("Failed to fetch goal scorers for full-time embed", { error, fixtureId: fixture.id });
+    }
+  }
+
+  const embed = matchStatusEmbed({
+    homeTeam: fixture.teams.home.name,
+    awayTeam: fixture.teams.away.name,
+    homeScore: fixture.goals.home ?? 0,
+    awayScore: fixture.goals.away ?? 0,
+    competition: fixture.league.name,
+    status,
+    goalScorers,
+    venue: fixture.venue.name,
+  });
+
+  for (const server of servers) {
+    const channelId = server.channels.live;
+    if (!channelId) continue;
+
+    await sendToChannel(client, server.guildId, channelId, embed);
+  }
+}
+
+async function broadcastEvent(
+  client: GoalXClient,
+  fixture: FootballFixture,
+  event: FootballEvent,
+  servers: { guildId: string; channels: { live?: string; goals?: string } }[],
+): Promise<void> {
+  const minute = event.time.extra ? `${event.time.elapsed}+${event.time.extra}'` : `${event.time.elapsed}'`;
+
+  const matchBase = {
+    homeTeam: fixture.teams.home.name,
+    awayTeam: fixture.teams.away.name,
+    homeScore: fixture.goals.home ?? 0,
+    awayScore: fixture.goals.away ?? 0,
+    competition: fixture.league.name,
+  };
+
+  if (event.type === "Goal" && event.detail !== "Missed Penalty") {
+    const embed = goalEmbed({
+      ...matchBase,
+      scorerName: event.player.name,
+      scorerTeam: event.team.name,
+      minute,
+      assistName: event.assist.name ?? undefined,
+      isPenalty: event.detail.toLowerCase().includes("penalty"),
+      isOwnGoal: event.detail.toLowerCase().includes("own"),
+    });
+
+    for (const server of servers) {
+      const channelId = server.channels.goals ?? server.channels.live;
+      if (!channelId) continue;
+      await sendToChannel(client, server.guildId, channelId, embed);
+    }
+    return;
+  }
+
+  if (event.type === "Card") {
+    const cardType = event.detail.toLowerCase().includes("second yellow")
+      ? "second_yellow"
+      : event.detail.toLowerCase().includes("yellow")
+        ? "yellow"
+        : "red";
+
+    const embed = cardEmbed({
+      ...matchBase,
+      playerName: event.player.name,
+      playerTeam: event.team.name,
+      minute,
+      cardType,
+    });
+
+    for (const server of servers) {
+      const channelId = server.channels.live;
+      if (!channelId) continue;
+      await sendToChannel(client, server.guildId, channelId, embed);
+    }
+    return;
+  }
+
+  if (event.type === "subst") {
+    const embed = substitutionEmbed({
+      ...matchBase,
+      playerOut: event.assist.name ?? "Unknown",
+      playerIn: event.player.name,
+      team: event.team.name,
+      minute,
+    });
+
+    for (const server of servers) {
+      const channelId = server.channels.live;
+      if (!channelId) continue;
+      await sendToChannel(client, server.guildId, channelId, embed);
+    }
+  }
+}
+
+async function sendToChannel(
+  client: GoalXClient,
+  guildId: string,
+  channelId: string,
+  embed: ReturnType<typeof goalEmbed>,
+): Promise<void> {
+  try {
+    const guild = client.guilds.cache.get(guildId);
+    if (!guild) return;
+
+    const channel = guild.channels.cache.get(channelId) ?? (await guild.channels.fetch(channelId).catch(() => null));
+
+    if (!channel || !channel.isTextBased() || channel.isThread()) return;
+
+    await channel.send({ embeds: [embed] });
+  } catch (error) {
+    logger.error("Failed to send live update to channel", { error, guildId, channelId });
+  }
+}
+
+function cleanupFinishedFixtures(currentlyLiveFixtures: FootballFixture[]): void {
+  const liveIds = new Set(currentlyLiveFixtures.map((f) => f.id));
+
+  for (const fixtureId of seenEventKeys.keys()) {
+    if (!liveIds.has(fixtureId) && finishedFixtures.has(fixtureId)) {
+      seenEventKeys.delete(fixtureId);
+      seenStatusKeys.delete(fixtureId);
+      finishedFixtures.delete(fixtureId);
+    }
+  }
+}
