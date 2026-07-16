@@ -8,6 +8,7 @@ export interface IUser extends Document {
   favoriteTeamId?: number;
   favoriteLeagueId?: number;
   fantasyTeamId?: Types.ObjectId;
+  followedFixtures: number[];
   stats: {
     predictionsMade: number;
     predictionsCorrect: number;
@@ -22,6 +23,8 @@ export interface IUser extends Document {
   updatedAt: Date;
 }
 
+const MAX_FOLLOWED_FIXTURES = 20;
+
 const UserSchema = new Schema<IUser>(
   {
     discordId: { type: String, required: true, unique: true, index: true },
@@ -31,6 +34,14 @@ const UserSchema = new Schema<IUser>(
     favoriteTeamId: { type: Number },
     favoriteLeagueId: { type: Number },
     fantasyTeamId: { type: Schema.Types.ObjectId, ref: "FantasyTeam" },
+    followedFixtures: {
+      type: [Number],
+      default: [],
+      validate: {
+        validator: (value: number[]) => value.length <= MAX_FOLLOWED_FIXTURES,
+        message: `Cannot follow more than ${MAX_FOLLOWED_FIXTURES} fixtures at once.`,
+      },
+    },
     stats: {
       predictionsMade: { type: Number, default: 0 },
       predictionsCorrect: { type: Number, default: 0 },
@@ -44,5 +55,9 @@ const UserSchema = new Schema<IUser>(
   },
   { timestamps: true },
 );
+
+// Index to make liveUpdater.ts's "who follows fixture X" lookup fast without
+// scanning every user document on every poll tick.
+UserSchema.index({ followedFixtures: 1 });
 
 export const User = model<IUser>("User", UserSchema);
