@@ -9,7 +9,6 @@ export interface FantasyPlayerPool {
   price: number;
   totalPoints: number;
   form: number;
-  ownership: number;
   photo?: string;
   injured: boolean;
 }
