@@ -11,6 +11,13 @@ import { errorEmbed, aiEmbed, loadingEmbed } from "../../utils/embeds";
 import { EMOJIS } from "../../config/constants";
 import { formatPoints } from "../../utils/formatter";
 import { logger } from "../../utils/logger";
+import type { IFantasyTeam } from "../../database/models/FantasyTeam";
+
+function summarizeTeam(team: IFantasyTeam): string {
+  const captain = team.players.find((p) => p.isCaptain);
+  const starting = team.players.filter((p) => p.isStarting);
+  return `${team.teamName}: ${starting.length} starters, ${formatPoints(team.totalPoints)} total, captain: ${captain?.name ?? "none set"}`;
+}
 
 const command: Command = {
   data: new SlashCommandBuilder()
@@ -28,7 +35,9 @@ const command: Command = {
   async execute(client, interaction: ChatInputCommandInteraction): Promise<void> {
     await interaction.deferReply();
 
-    if (!interaction.guildId) {
+    const guildId = interaction.guildId;
+
+    if (!guildId) {
       await interaction.editReply({
         embeds: [errorEmbed("This command can only be used inside a server.")],
       });
@@ -48,10 +57,7 @@ const command: Command = {
       let challengeId = providedId;
 
       if (!challengeId) {
-        const relevant = await challengeService.getActiveChallengesFor(
-          interaction.user.id,
-          interaction.guildId,
-        );
+        const relevant = await challengeService.getActiveChallengesFor(interaction.user.id, guildId);
 
         if (relevant.length === 0) {
           await interaction.editReply({
@@ -123,12 +129,6 @@ const command: Command = {
         return;
       }
 
-      const summarizeTeam = (team: typeof proposerTeam) => {
-        const captain = team.players.find((p) => p.isCaptain);
-        const starting = team.players.filter((p) => p.isStarting);
-        return `${team.teamName}: ${starting.length} starters, ${formatPoints(team.totalPoints)} total, captain: ${captain?.name ?? "none set"}`;
-      };
-
       const systemPrompt =
         "You are GoalX's fantasy football analyst. Compare two fantasy teams head-to-head and give a brief, balanced prediction of who has the edge and why. Keep it under 120 words, confident but not definitive, and avoid guaranteeing outcomes.";
 
@@ -157,7 +157,7 @@ const command: Command = {
       });
 
       await interaction.editReply({ embeds: [embed] });
-    } catch (error) {
+    } catch (error: unknown) {
       logger.error("Error in /analyze command", { error, userId: interaction.user.id });
 
       const message =
