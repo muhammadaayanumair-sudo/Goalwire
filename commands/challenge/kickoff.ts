@@ -44,9 +44,11 @@ const command: Command = {
     }
 
     try {
-      let challengeId = providedId;
+      let resolvedChallengeId: string;
 
-      if (!challengeId) {
+      if (providedId) {
+        resolvedChallengeId = providedId;
+      } else {
         const active = await challengeService.getActiveChallengesFor(interaction.user.id, guildId);
         const accepted = active.filter((c) => c.status === "accepted");
 
@@ -80,10 +82,10 @@ const command: Command = {
           return;
         }
 
-        challengeId = accepted[0].id;
+        resolvedChallengeId = accepted[0].id;
       }
 
-      const challenge = await challengeService.startChallenge(challengeId, interaction.user.id);
+      const challenge = await challengeService.startChallenge(resolvedChallengeId, interaction.user.id);
 
       const opponentId =
         challenge.proposerDiscordId === interaction.user.id
