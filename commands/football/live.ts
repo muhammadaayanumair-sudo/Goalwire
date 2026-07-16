@@ -26,6 +26,28 @@ const LEAGUE_CHOICES = [
   { name: "Champions League", value: LEAGUE_IDS.CHAMPIONS_LEAGUE },
 ];
 
+function buildLiveEmbed(fixtures: FootballFixture[]) {
+  const fields = fixtures.slice(0, 10).map((fixture) => {
+    const timeDisplay =
+      fixture.status.elapsed !== null
+        ? formatMatchTime(fixture.status.elapsed)
+        : formatMatchStatus(fixture.status.short);
+
+    return {
+      name: `${fixture.teams.home.name} ${fixture.goals.home ?? 0} - ${fixture.goals.away ?? 0} ${fixture.teams.away.name}`,
+      value: `${timeDisplay} • ${fixture.league.name}`,
+      inline: false,
+    };
+  });
+
+  return liveEmbed({
+    title: `${EMOJIS.FOOTBALL} Live Matches (${fixtures.length})`,
+    fields,
+    footerText:
+      fixtures.length > 10 ? `Showing 10 of ${fixtures.length} live matches` : "Updates every refresh",
+  });
+}
+
 const command: Command = {
   data: new SlashCommandBuilder()
     .setName("live")
@@ -63,7 +85,7 @@ const command: Command = {
         return;
       }
 
-      const embed = this.buildLiveEmbed(fixtures);
+      const embed = buildLiveEmbed(fixtures);
       const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
         new ButtonBuilder()
           .setCustomId(CUSTOM_IDS.MATCH.REFRESH)
@@ -113,7 +135,7 @@ const command: Command = {
           }
 
           await interaction.editReply({
-            embeds: [this.buildLiveEmbed(refreshedFixtures)],
+            embeds: [buildLiveEmbed(refreshedFixtures)],
             components: [row],
           });
         } catch (error) {
@@ -147,28 +169,6 @@ const command: Command = {
 
       await interaction.editReply({ embeds: [errorEmbed(message)] });
     }
-  },
-
-  buildLiveEmbed(fixtures: FootballFixture[]) {
-    const fields = fixtures.slice(0, 10).map((fixture) => {
-      const timeDisplay =
-        fixture.status.elapsed !== null
-          ? formatMatchTime(fixture.status.elapsed)
-          : formatMatchStatus(fixture.status.short);
-
-      return {
-        name: `${fixture.teams.home.name} ${fixture.goals.home ?? 0} - ${fixture.goals.away ?? 0} ${fixture.teams.away.name}`,
-        value: `${timeDisplay} • ${fixture.league.name}`,
-        inline: false,
-      };
-    });
-
-    return liveEmbed({
-      title: `${EMOJIS.FOOTBALL} Live Matches (${fixtures.length})`,
-      fields,
-      footerText:
-        fixtures.length > 10 ? `Showing 10 of ${fixtures.length} live matches` : "Updates every refresh",
-    });
   },
 };
 
