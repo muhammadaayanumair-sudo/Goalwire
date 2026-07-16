@@ -4,19 +4,45 @@ import {
   ActionRowBuilder,
   StringSelectMenuBuilder,
   StringSelectMenuOptionBuilder,
-  ButtonBuilder,
-  ButtonStyle,
   ComponentType,
 } from "discord.js";
 import type { Command } from "../../types/discord";
 import { fantasyService, FantasyError } from "../../services/fantasy/FantasyService";
-import { errorEmbed, fantasyEmbed, warningEmbed } from "../../utils/embeds";
+import { errorEmbed, fantasyEmbed } from "../../utils/embeds";
 import { CUSTOM_IDS, EMOJIS } from "../../config/constants";
 import { formatCurrency } from "../../utils/formatter";
 import { logger } from "../../utils/logger";
 import type { IFantasyPlayer } from "../../database/models/FantasyTeam";
 
 const SELECT_TIMEOUT_MS = 60000;
+
+function getErrorMessage(error: unknown, fallback: string): string {
+  if (error instanceof FantasyError || error instanceof Error) return error.message;
+  return fallback;
+}
+
+function buildSelectMenu(
+  players: IFantasyPlayer[],
+  customId: string,
+  role: "captain" | "vice-captain",
+  currentId?: number,
+): StringSelectMenuBuilder {
+  const options = players.slice(0, 25).map((p) =>
+    new StringSelectMenuOptionBuilder()
+      .setLabel(p.name)
+      .setDescription(`${p.position} • ${formatCurrency(p.price)} • ${p.teamName}`)
+      .setValue(String(p.playerId))
+      .setDefault(p.playerId === currentId)
+      .setEmoji(role === "captain" ? "👑" : "🥈"),
+  );
+
+  return new StringSelectMenuBuilder()
+    .setCustomId(customId)
+    .setPlaceholder(`Choose your ${role}`)
+    .setMinValues(1)
+    .setMaxValues(1)
+    .addOptions(options);
+}
 
 const command: Command = {
   data: new SlashCommandBuilder()
@@ -65,11 +91,10 @@ const command: Command = {
           "",
           "Select your captain below. If your captain doesn't play, points auto-transfer to your vice-captain.",
         ].join("\n"),
-        footerText: team.isLocked ? "⚠️ Team locked — captain choice still allowed until kickoff" : undefined,
       });
 
-      const captainMenu = this.buildSelectMenu(starting, `${CUSTOM_IDS.FANTASY.CAPTAIN}_select`, "captain", currentCaptain?.playerId);
-      const viceMenu = this.buildSelectMenu(starting, `${CUSTOM_IDS.FANTASY.CAPTAIN}_vice_select`, "vice-captain", currentVice?.playerId);
+      const captainMenu = buildSelectMenu(starting, `${CUSTOM_IDS.FANTASY.CAPTAIN}_select`, "captain", currentCaptain?.playerId);
+      const viceMenu = buildSelectMenu(starting, `${CUSTOM_IDS.FANTASY.CAPTAIN}_vice_select`, "vice-captain", currentVice?.playerId);
 
       const message = await interaction.editReply({
         embeds: [embed],
@@ -108,12 +133,8 @@ const command: Command = {
 
           await interaction.editReply({ embeds: [confirmEmbed], components: [] });
           collector.stop("completed");
-        } catch (error) {
-          const message =
-            error instanceof FantasyError || error instanceof Error
-              ? error.message
-              : "Failed to update captaincy.";
-
+        } catch (error: unknown) {
+          const message = getErrorMessage(error, "Failed to update captaincy.");
           logger.error("Error updating captaincy", { error, userId: interaction.user.id });
           await selectInteraction.followUp({ embeds: [errorEmbed(message)], ephemeral: true });
         }
@@ -128,39 +149,11 @@ const command: Command = {
           logger.warn("Failed to clear captain selection components on timeout", { error });
         }
       });
-    } catch (error) {
+    } catch (error: unknown) {
       logger.error("Error in /captain command", { error, userId: interaction.user.id });
-
-      const message =
-        error instanceof FantasyError || error instanceof Error
-          ? error.message
-          : "Failed to load captaincy options.";
-
+      const message = getErrorMessage(error, "Failed to load captaincy options.");
       await interaction.editReply({ embeds: [errorEmbed(message)] });
     }
-  },
-
-  buildSelectMenu(
-    players: IFantasyPlayer[],
-    customId: string,
-    role: "captain" | "vice-captain",
-    currentId?: number,
-  ): StringSelectMenuBuilder {
-    const options = players.slice(0, 25).map((p) =>
-      new StringSelectMenuOptionBuilder()
-        .setLabel(p.name)
-        .setDescription(`${p.position} • ${formatCurrency(p.price)} • ${p.teamName}`)
-        .setValue(String(p.playerId))
-        .setDefault(p.playerId === currentId)
-        .setEmoji(role === "captain" ? "👑" : "🥈"),
-    );
-
-    return new StringSelectMenuBuilder()
-      .setCustomId(customId)
-      .setPlaceholder(`Choose your ${role}`)
-      .setMinValues(1)
-      .setMaxValues(1)
-      .addOptions(options);
   },
 };
 
