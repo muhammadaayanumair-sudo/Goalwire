@@ -1,4 +1,5 @@
 import "dotenv/config";
+import { GatewayIntentBits, Partials } from "discord.js";
 import { GoalXClient } from "./client/GoalXClient";
 import { logger } from "./utils/logger";
 import { connectDatabase } from "./database/mongo";
@@ -20,7 +21,16 @@ async function bootstrap(): Promise<void> {
     await connectDatabase();
     logger.info("Database connected successfully");
 
-    const client = new GoalXClient();
+    const client = new GoalXClient({
+      intents: [
+        GatewayIntentBits.Guilds,
+        GatewayIntentBits.GuildMessages,
+        GatewayIntentBits.GuildMembers,
+        GatewayIntentBits.MessageContent,
+      ],
+      partials: [Partials.Channel, Partials.Message],
+    });
+
     await client.start(env.DISCORD_TOKEN);
 
     const shutdown = async (signal: string): Promise<void> => {
