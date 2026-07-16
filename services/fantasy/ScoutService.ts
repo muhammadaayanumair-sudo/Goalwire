@@ -12,16 +12,14 @@ interface ScoutCriteria {
   budget?: number;
   position?: FantasyPlayerPool["position"];
   excludePlayerIds?: number[];
-  preferForm?: boolean;
 }
 
 interface AIRecommendationProvider {
   generateReasoning(player: FantasyPlayerPool, context: string): Promise<string>;
 }
 
-const FORM_WEIGHT = 0.4;
-const OWNERSHIP_DIFFERENTIAL_WEIGHT = 0.15;
-const POINTS_PER_PRICE_WEIGHT = 0.45;
+const FORM_WEIGHT = 0.45;
+const POINTS_PER_PRICE_WEIGHT = 0.55;
 
 export class ScoutService {
   constructor(private readonly aiProvider?: AIRecommendationProvider) {}
@@ -51,13 +49,8 @@ export class ScoutService {
 
   private computeScore(player: FantasyPlayerPool): number {
     const pointsPerPrice = player.price > 0 ? player.totalPoints / player.price : 0;
-    const differentialBonus = player.ownership < 10 ? (10 - player.ownership) / 10 : 0;
 
-    return (
-      player.form * FORM_WEIGHT +
-      pointsPerPrice * POINTS_PER_PRICE_WEIGHT +
-      differentialBonus * OWNERSHIP_DIFFERENTIAL_WEIGHT
-    );
+    return player.form * FORM_WEIGHT + pointsPerPrice * POINTS_PER_PRICE_WEIGHT;
   }
 
   public async getRecommendations(
@@ -80,7 +73,7 @@ export class ScoutService {
         try {
           reason = await this.aiProvider.generateReasoning(
             player,
-            `Form: ${player.form}, Ownership: ${player.ownership}%, Price: £${player.price}m`,
+            `Form: ${player.form}, Price: £${player.price}m, Total points: ${player.totalPoints}`,
           );
         } catch (error) {
           logger.warn("AI reasoning generation failed, falling back to heuristic", {
@@ -107,7 +100,6 @@ export class ScoutService {
     if (player.form >= 7) parts.push("excellent recent form");
     else if (player.form >= 4) parts.push("solid recent form");
 
-    if (player.ownership < 10) parts.push("low ownership differential pick");
     if (player.totalPoints / Math.max(player.price, 1) > 8) parts.push("strong value for price");
 
     if (parts.length === 0) parts.push("balanced overall profile");
