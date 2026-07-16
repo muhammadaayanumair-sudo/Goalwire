@@ -13,6 +13,7 @@ interface BaseEmbedOptions {
   footerIcon?: string;
   timestamp?: boolean;
   author?: { name: string; iconURL?: string };
+  url?: string;
 }
 
 const DEFAULT_FOOTER = "GoalX • Fantasy Football Assistant";
@@ -21,6 +22,12 @@ function truncate(text: string, max: number): string {
   return text.length > max ? `${text.slice(0, max - 3)}...` : text;
 }
 
+/**
+ * Base builder. Every category-specific embed (fantasyEmbed, liveEmbed, etc.)
+ * wraps this — the left-hand color bar Discord renders comes from setColor,
+ * so consistent category colors (config/colors.ts) are what create the
+ * "branded accent bar" look across every GoalX embed.
+ */
 export function buildEmbed(options: BaseEmbedOptions): EmbedBuilder {
   const embed = new EmbedBuilder().setColor((options.color ?? COLORS.PRIMARY) as ColorResolvable);
 
@@ -31,6 +38,7 @@ export function buildEmbed(options: BaseEmbedOptions): EmbedBuilder {
   if (options.thumbnail) embed.setThumbnail(options.thumbnail);
   if (options.image) embed.setImage(options.image);
   if (options.author) embed.setAuthor(options.author);
+  if (options.url) embed.setURL(options.url);
 
   if (options.fields?.length) {
     embed.addFields(
@@ -86,4 +94,70 @@ export function newsEmbed(options: BaseEmbedOptions): EmbedBuilder {
 
 export function partnerEmbed(options: BaseEmbedOptions): EmbedBuilder {
   return buildEmbed({ ...options, color: options.color ?? COLORS.PARTNER });
+}
+
+/**
+ * Announcement-style embed for milestone/creation events —
+ * e.g. "A new fantasy team has been created", partner activations.
+ * Bold emoji-led title + short celebratory description, matching the
+ * "🎉 A new team has been created!" pattern from polished football bots,
+ * but in GoalX's own voice and color.
+ */
+export function announcementEmbed(options: BaseEmbedOptions & { emoji?: string }): EmbedBuilder {
+  const emoji = options.emoji ?? "🎉";
+  return buildEmbed({
+    ...options,
+    title: options.title ? `${emoji} ${options.title}` : undefined,
+    color: options.color ?? COLORS.SUCCESS,
+  });
+}
+
+/**
+ * Goal/full-time style match event embed — bold headline, structured
+ * scoreline, and a goal-scorer breakdown field. Used by live match
+ * notifications and the /match command's overview view.
+ */
+export function matchEventEmbed(options: {
+  headline: string;
+  homeTeam: string;
+  awayTeam: string;
+  homeScore: number;
+  awayScore: number;
+  competition: string;
+  minuteLabel?: string;
+  goalScorers?: { minute: string; player: string; team: string }[];
+  isFullTime?: boolean;
+}): EmbedBuilder {
+  const {
+    headline,
+    homeTeam,
+    awayTeam,
+    homeScore,
+    awayScore,
+    competition,
+    minuteLabel,
+    goalScorers,
+    isFullTime,
+  } = options;
+
+  const fields: { name: string; value: string; inline?: boolean }[] = [];
+
+  if (goalScorers && goalScorers.length > 0) {
+    fields.push({
+      name: "⚽ Goals",
+      value: goalScorers.map((g) => `\`${g.minute}\` **${g.player}** (${g.team})`).join("\n"),
+      inline: false,
+    });
+  }
+
+  return buildEmbed({
+    title: headline,
+    description: [
+      `**${homeTeam}** \`${homeScore}\` - \`${awayScore}\` **${awayTeam}**`,
+      minuteLabel ? `\n${minuteLabel}` : "",
+    ].join(""),
+    fields,
+    color: isFullTime ? COLORS.SECONDARY : COLORS.LIVE,
+    footerText: `${competition} • GoalX Live`,
+  });
 }
