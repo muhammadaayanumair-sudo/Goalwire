@@ -1,5 +1,6 @@
 import { liveService } from "../services/football/LiveService";
 import { Server } from "../database/models/Server";
+import { User } from "../database/models/User";
 import {
   goalEmbed,
   cardEmbed,
@@ -9,17 +10,8 @@ import {
 import { logger } from "../utils/logger";
 import type { GoalXClient } from "../client/GoalXClient";
 import type { FootballFixture, FootballEvent } from "../types/football";
+import type { EmbedBuilder } from "discord.js";
 
-/**
- * Adaptive polling intervals, tuned to API-Football's 100 req/day free tier.
- *
- * Each tick costs 1 request for getLiveFixtures() plus 1 request per
- * currently-live fixture for getFixtureEvents(). With N live fixtures,
- * one tick costs (1 + N) requests. At a 100 req/day budget, this table
- * picks an interval that keeps total daily usage sane even on a busy
- * matchday, at the cost of slightly slower event detection when many
- * matches are live simultaneously.
- */
 const BASE_INTERVAL_MS = 60000;
 const MAX_INTERVAL_MS = 300000;
 const IDLE_INTERVAL_MS = 180000;
@@ -73,6 +65,37 @@ function scheduleNextPoll(client: GoalXClient, delayMs: number): void {
   }, delayMs);
 }
 
+/**
+ * DMs every user who follows this fixture and has dmAlerts enabled.
+ * Failures per-user (DMs closed, blocked bot, etc.) are logged and skipped
+ * individually so one blocked user doesn't stop the rest from being notified.
+ */
+async function notifyFollowers(client: GoalXClient, fixtureId: number, embed: EmbedBuilder): Promise<void> {
+  try {
+    const followers = await User.find({
+      followedFixtures: fixtureId,
+      "settings.dmAlerts": true,
+    }).lean();
+
+    if (followers.length === 0) return;
+
+    for (const follower of followers) {
+      try {
+        const discordUser = await client.users.fetch(follower.discordId);
+        await discordUser.send({ embeds: [embed] });
+      } catch (error) {
+        logger.warn("Failed to DM a fixture follower (likely DMs closed)", {
+          error,
+          discordId: follower.discordId,
+          fixtureId,
+        });
+      }
+    }
+  } catch (error) {
+    logger.error("Failed to query fixture followers", { error, fixtureId });
+  }
+}
+
 async function pollLiveFixtures(client: GoalXClient): Promise<void> {
   if (isPolling) {
     logger.debug("Skipping live poll tick — previous tick still running");
@@ -94,10 +117,6 @@ async function pollLiveFixtures(client: GoalXClient): Promise<void> {
     const servers = await Server.find({
       $or: [{ "channels.live": { $ne: null } }, { "channels.goals": { $ne: null } }],
     }).lean();
-
-    if (servers.length === 0) {
-      return;
-    }
 
     for (const fixture of fixtures) {
       try {
@@ -200,6 +219,10 @@ async function broadcastStatusChange(
 
     await sendToChannel(client, server.guildId, channelId, embed);
   }
+
+  // Followers get kickoff/half-time/full-time DMs regardless of which servers
+  // have a live channel configured — following is per-user, not per-server.
+  await notifyFollowers(client, fixture.id, embed);
 }
 
 async function broadcastEvent(
@@ -234,6 +257,8 @@ async function broadcastEvent(
       if (!channelId) continue;
       await sendToChannel(client, server.guildId, channelId, embed);
     }
+
+    await notifyFollowers(client, fixture.id, embed);
     return;
   }
 
@@ -265,46 +290,3 @@ async function broadcastEvent(
       ...matchBase,
       playerOut: event.assist.name ?? "Unknown",
       playerIn: event.player.name,
-      team: event.team.name,
-      minute,
-    });
-
-    for (const server of servers) {
-      const channelId = server.channels.live;
-      if (!channelId) continue;
-      await sendToChannel(client, server.guildId, channelId, embed);
-    }
-  }
-}
-
-async function sendToChannel(
-  client: GoalXClient,
-  guildId: string,
-  channelId: string,
-  embed: ReturnType<typeof goalEmbed>,
-): Promise<void> {
-  try {
-    const guild = client.guilds.cache.get(guildId);
-    if (!guild) return;
-
-    const channel = guild.channels.cache.get(channelId) ?? (await guild.channels.fetch(channelId).catch(() => null));
-
-    if (!channel || !channel.isTextBased() || channel.isThread()) return;
-
-    await channel.send({ embeds: [embed] });
-  } catch (error) {
-    logger.error("Failed to send live update to channel", { error, guildId, channelId });
-  }
-}
-
-function cleanupFinishedFixtures(currentlyLiveFixtures: FootballFixture[]): void {
-  const liveIds = new Set(currentlyLiveFixtures.map((f) => f.id));
-
-  for (const fixtureId of seenEventKeys.keys()) {
-    if (!liveIds.has(fixtureId) && finishedFixtures.has(fixtureId)) {
-      seenEventKeys.delete(fixtureId);
-      seenStatusKeys.delete(fixtureId);
-      finishedFixtures.delete(fixtureId);
-    }
-  }
-}
