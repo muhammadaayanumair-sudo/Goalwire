@@ -1,10 +1,6 @@
-import {
-  SlashCommandBuilder,
-  ChatInputCommandInteraction,
-} from "discord.js";
+import { SlashCommandBuilder, ChatInputCommandInteraction } from "discord.js";
 import type { Command } from "../../types/discord";
 import { fantasyService, FantasyError } from "../../services/fantasy/FantasyService";
-import { pointsService } from "../../services/fantasy/PointsService";
 import { errorEmbed, fantasyEmbed } from "../../utils/embeds";
 import { EMOJIS } from "../../config/constants";
 import { formatPoints, formatOrdinal } from "../../utils/formatter";
@@ -12,6 +8,11 @@ import { logger } from "../../utils/logger";
 import { FantasyTeam } from "../../database/models/FantasyTeam";
 
 const MAX_HISTORY_DISPLAY = 6;
+
+function getErrorMessage(error: unknown, fallback: string): string {
+  if (error instanceof FantasyError || error instanceof Error) return error.message;
+  return fallback;
+}
 
 const command: Command = {
   data: new SlashCommandBuilder()
@@ -111,14 +112,9 @@ const command: Command = {
       });
 
       await interaction.editReply({ embeds: [embed] });
-    } catch (error) {
+    } catch (error: unknown) {
       logger.error("Error in /points command", { error, userId: interaction.user.id });
-
-      const message =
-        error instanceof FantasyError || error instanceof Error
-          ? error.message
-          : "Failed to load your points.";
-
+      const message = getErrorMessage(error, "Failed to load your points.");
       await interaction.editReply({ embeds: [errorEmbed(message)] });
     }
   },
