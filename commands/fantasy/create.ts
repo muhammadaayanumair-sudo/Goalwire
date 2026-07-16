@@ -7,7 +7,7 @@ import {
 } from "discord.js";
 import type { Command } from "../../types/discord";
 import { fantasyService } from "../../services/fantasy/FantasyService";
-import { successEmbed, errorEmbed, fantasyEmbed } from "../../utils/embeds";
+import { errorEmbed, fantasyEmbed } from "../../utils/embeds";
 import { User } from "../../database/models/User";
 import { CUSTOM_IDS, EMOJIS } from "../../config/constants";
 import { logger } from "../../utils/logger";
@@ -90,7 +90,7 @@ const command: Command = {
       );
 
       await interaction.editReply({ embeds: [embed], components: [row] });
-    } catch (error) {
+    } catch (error: unknown) {
       logger.error("Error in /create command", { error, userId: interaction.user.id });
 
       const message = error instanceof Error ? error.message : "Failed to create your fantasy team.";
