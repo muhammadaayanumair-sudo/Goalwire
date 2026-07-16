@@ -5,13 +5,12 @@ import {
 import { isValidObjectId } from "mongoose";
 import type { Command } from "../../types/discord";
 import { challengeService, ChallengeError } from "../../services/fantasy/ChallengeService";
-import { FantasyTeam } from "../../database/models/FantasyTeam";
+import { FantasyTeam, IFantasyTeam } from "../../database/models/FantasyTeam";
 import { aiService, AIServiceError } from "../../services/ai/AIService";
 import { errorEmbed, aiEmbed, loadingEmbed } from "../../utils/embeds";
 import { EMOJIS } from "../../config/constants";
 import { formatPoints } from "../../utils/formatter";
 import { logger } from "../../utils/logger";
-import type { IFantasyTeam } from "../../database/models/FantasyTeam";
 
 function summarizeTeam(team: IFantasyTeam): string {
   const captain = team.players.find((p) => p.isCaptain);
@@ -54,9 +53,11 @@ const command: Command = {
     }
 
     try {
-      let challengeId = providedId;
+      let resolvedChallengeId: string;
 
-      if (!challengeId) {
+      if (providedId) {
+        resolvedChallengeId = providedId;
+      } else {
         const relevant = await challengeService.getActiveChallengesFor(interaction.user.id, guildId);
 
         if (relevant.length === 0) {
@@ -87,10 +88,10 @@ const command: Command = {
           return;
         }
 
-        challengeId = relevant[0].id;
+        resolvedChallengeId = relevant[0].id;
       }
 
-      const challenge = await challengeService.getChallenge(challengeId);
+      const challenge = await challengeService.getChallenge(resolvedChallengeId);
 
       if (!challenge) {
         await interaction.editReply({ embeds: [errorEmbed("That challenge no longer exists.")] });
@@ -140,7 +141,7 @@ const command: Command = {
       } catch (aiError) {
         logger.warn("AI analysis failed for challenge, falling back to stats-only view", {
           error: aiError,
-          challengeId,
+          challengeId: resolvedChallengeId,
         });
         analysis =
           "AI analysis is temporarily unavailable, so here's the raw comparison — check total points and captain picks above to judge the matchup yourself.";
