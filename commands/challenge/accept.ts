@@ -44,9 +44,11 @@ const command: Command = {
     }
 
     try {
-      let challengeId = providedId;
+      let resolvedChallengeId: string;
 
-      if (!challengeId) {
+      if (providedId) {
+        resolvedChallengeId = providedId;
+      } else {
         const pending = await challengeService.getPendingChallengesFor(interaction.user.id, guildId);
 
         if (pending.length === 0) {
@@ -71,10 +73,10 @@ const command: Command = {
           return;
         }
 
-        challengeId = pending[0].id;
+        resolvedChallengeId = pending[0].id;
       }
 
-      const challenge = await challengeService.acceptChallenge(challengeId, interaction.user.id);
+      const challenge = await challengeService.acceptChallenge(resolvedChallengeId, interaction.user.id);
 
       const embed = fantasyEmbed({
         title: `${EMOJIS.CHECK} Challenge Accepted`,
