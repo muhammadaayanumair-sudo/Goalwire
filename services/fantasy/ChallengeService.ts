@@ -1,4 +1,4 @@
-import { Challenge, IChallenge, ChallengeStatus } from "../../database/models/Challenge";
+import { Challenge, IChallenge } from "../../database/models/Challenge";
 import { FantasyTeam } from "../../database/models/FantasyTeam";
 import { logger } from "../../utils/logger";
 
