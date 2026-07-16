@@ -5,6 +5,15 @@ import { logger } from "../../utils/logger";
 import type { FantasyPlayerPool, FantasyPosition } from "../../types/fantasy";
 import { POSITION_LIMITS } from "../../config/constants";
 
+export class FantasyError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "FantasyError";
+  }
+}
+
+const REQUIRED_STARTING_XI = 11;
+
 export class FantasyService {
   public async createTeam(
     discordId: string,
@@ -13,12 +22,12 @@ export class FantasyService {
   ): Promise<IFantasyTeam> {
     const existing = await FantasyTeam.findOne({ discordId, guildId });
     if (existing) {
-      throw new Error("You already have a fantasy team in this server.");
+      throw new FantasyError("You already have a fantasy team in this server.");
     }
 
     const user = await User.findOne({ discordId });
     if (!user) {
-      throw new Error("User profile not found. Please try again.");
+      throw new FantasyError("User profile not found. Please try again.");
     }
 
     const team = await FantasyTeam.create({
@@ -49,34 +58,34 @@ export class FantasyService {
     player: FantasyPlayerPool,
   ): Promise<IFantasyTeam> {
     const team = await FantasyTeam.findOne({ discordId, guildId });
-    if (!team) throw new Error("You don't have a fantasy team yet. Use /create first.");
+    if (!team) throw new FantasyError("You don't have a fantasy team yet. Use /create first.");
 
     if (team.isLocked) {
-      throw new Error("Your team is locked for this gameweek.");
+      throw new FantasyError("Your team is locked for this gameweek.");
     }
 
     if (team.players.length >= config.fantasy.squadSize) {
-      throw new Error(`Squad is full (max ${config.fantasy.squadSize} players).`);
+      throw new FantasyError(`Squad is full (max ${config.fantasy.squadSize} players).`);
     }
 
     if (team.players.some((p) => p.playerId === player.playerId)) {
-      throw new Error(`${player.name} is already in your squad.`);
+      throw new FantasyError(`${player.name} is already in your squad.`);
     }
 
     if (player.price > team.remainingBudget) {
-      throw new Error(
+      throw new FantasyError(
         `Insufficient budget. ${player.name} costs £${player.price}m, you have £${team.remainingBudget.toFixed(1)}m left.`,
       );
     }
 
     const sameTeamCount = team.players.filter((p) => p.teamId === player.teamId).length;
     if (sameTeamCount >= config.fantasy.maxPlayersPerTeam) {
-      throw new Error(
+      throw new FantasyError(
         `You can only have ${config.fantasy.maxPlayersPerTeam} players from ${player.teamName}.`,
       );
     }
 
-    this.validatePositionLimit(team.players.map((p) => p.position), player.position, "add");
+    this.assertPositionLimit(team.players.map((p) => p.position), player.position);
 
     team.players.push({
       playerId: player.playerId,
@@ -103,15 +112,15 @@ export class FantasyService {
     playerId: number,
   ): Promise<IFantasyTeam> {
     const team = await FantasyTeam.findOne({ discordId, guildId });
-    if (!team) throw new Error("You don't have a fantasy team yet.");
+    if (!team) throw new FantasyError("You don't have a fantasy team yet.");
 
     if (team.isLocked) {
-      throw new Error("Your team is locked for this gameweek.");
+      throw new FantasyError("Your team is locked for this gameweek.");
     }
 
     const playerIndex = team.players.findIndex((p) => p.playerId === playerId);
     if (playerIndex === -1) {
-      throw new Error("That player is not in your squad.");
+      throw new FantasyError("That player is not in your squad.");
     }
 
     const [removed] = team.players.splice(playerIndex, 1);
@@ -121,19 +130,71 @@ export class FantasyService {
     return team;
   }
 
+  public async setStartingLineup(
+    discordId: string,
+    guildId: string,
+    startingPlayerIds: number[],
+  ): Promise<IFantasyTeam> {
+    const team = await FantasyTeam.findOne({ discordId, guildId });
+    if (!team) throw new FantasyError("You don't have a fantasy team yet.");
+
+    if (team.isLocked) {
+      throw new FantasyError("Your lineup is locked for this gameweek.");
+    }
+
+    const uniqueIds = new Set(startingPlayerIds);
+    if (uniqueIds.size !== startingPlayerIds.length) {
+      throw new FantasyError("Duplicate players in starting lineup selection.");
+    }
+
+    if (uniqueIds.size !== REQUIRED_STARTING_XI) {
+      throw new FantasyError(`Starting XI must contain exactly ${REQUIRED_STARTING_XI} players.`);
+    }
+
+    const squadIds = new Set(team.players.map((p) => p.playerId));
+    for (const id of uniqueIds) {
+      if (!squadIds.has(id)) {
+        throw new FantasyError(`Player ID ${id} is not part of your squad.`);
+      }
+    }
+
+    const startingPlayers = team.players.filter((p) => uniqueIds.has(p.playerId));
+    const counts: Record<FantasyPosition, number> = { GK: 0, DEF: 0, MID: 0, FWD: 0 };
+    for (const player of startingPlayers) counts[player.position]++;
+
+    if (counts.GK !== 1) throw new FantasyError("Your starting XI must include exactly 1 goalkeeper.");
+    if (counts.DEF < 3 || counts.DEF > 5) throw new FantasyError("Your starting XI must include between 3 and 5 defenders.");
+    if (counts.MID < 2 || counts.MID > 5) throw new FantasyError("Your starting XI must include between 2 and 5 midfielders.");
+    if (counts.FWD < 1 || counts.FWD > 3) throw new FantasyError("Your starting XI must include between 1 and 3 forwards.");
+
+    team.players.forEach((player) => {
+      player.isStarting = uniqueIds.has(player.playerId);
+    });
+
+    await team.save();
+
+    logger.info("Starting lineup updated", { discordId, guildId, startingCount: uniqueIds.size });
+    return team;
+  }
+
   public async setCaptain(
     discordId: string,
     guildId: string,
     playerId: number,
   ): Promise<IFantasyTeam> {
     const team = await FantasyTeam.findOne({ discordId, guildId });
-    if (!team) throw new Error("You don't have a fantasy team yet.");
+    if (!team) throw new FantasyError("You don't have a fantasy team yet.");
 
     const player = team.players.find((p) => p.playerId === playerId);
-    if (!player) throw new Error("That player is not in your squad.");
+    if (!player) throw new FantasyError("That player is not in your squad.");
+
+    if (!player.isStarting) {
+      throw new FantasyError("You can only captain a player in your starting XI.");
+    }
 
     team.players.forEach((p) => {
       p.isCaptain = p.playerId === playerId;
+      if (p.isCaptain && p.isViceCaptain) p.isViceCaptain = false;
     });
 
     await team.save();
@@ -146,10 +207,14 @@ export class FantasyService {
     playerId: number,
   ): Promise<IFantasyTeam> {
     const team = await FantasyTeam.findOne({ discordId, guildId });
-    if (!team) throw new Error("You don't have a fantasy team yet.");
+    if (!team) throw new FantasyError("You don't have a fantasy team yet.");
 
     const player = team.players.find((p) => p.playerId === playerId);
-    if (!player) throw new Error("That player is not in your squad.");
+    if (!player) throw new FantasyError("That player is not in your squad.");
+
+    if (player.isCaptain) {
+      throw new FantasyError("This player is already your captain.");
+    }
 
     team.players.forEach((p) => {
       p.isViceCaptain = p.playerId === playerId;
@@ -159,18 +224,15 @@ export class FantasyService {
     return team;
   }
 
-  private validatePositionLimit(
+  private assertPositionLimit(
     currentPositions: FantasyPosition[],
     newPosition: FantasyPosition,
-    action: "add",
   ): void {
-    if (action !== "add") return;
-
     const count = currentPositions.filter((pos) => pos === newPosition).length;
     const limit = POSITION_LIMITS[newPosition].max;
 
     if (count >= limit) {
-      throw new Error(`You can only have ${limit} ${newPosition} players in your squad.`);
+      throw new FantasyError(`You can only have ${limit} ${newPosition} players in your squad.`);
     }
   }
 
