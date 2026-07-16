@@ -19,6 +19,17 @@ import type { FantasyPlayerPool, FantasyPosition } from "../../types/fantasy";
 
 const CURRENT_SEASON = new Date().getFullYear();
 
+interface CandidateStats {
+  team?: { id: number; name: string };
+  games?: { position: string; appearences?: number };
+  goals?: { total?: number | null };
+}
+
+interface Candidate {
+  player: { id: number; name: string };
+  statistics: CandidateStats[];
+}
+
 function mapApiPosition(position: string | undefined): FantasyPosition {
   const normalized = (position ?? "").toLowerCase();
   if (normalized.includes("goalkeeper")) return "GK";
@@ -27,9 +38,7 @@ function mapApiPosition(position: string | undefined): FantasyPosition {
   return "FWD";
 }
 
-function estimatePrice(
-  stats: { goals?: { total?: number | null }; games?: { appearences?: number } } | undefined,
-): number {
+function estimatePrice(stats: CandidateStats | undefined): number {
   const goals = stats?.goals?.total ?? 0;
   const appearances = stats?.games?.appearences ?? 1;
   const basePrice = 4.5;
@@ -40,10 +49,7 @@ function estimatePrice(
 async function executeTransfer(
   interaction: ChatInputCommandInteraction,
   playerOutId: number,
-  candidate: {
-    player: { id: number; name: string };
-    statistics: { team?: { id: number; name: string }; games?: { position: string }; goals?: { total?: number | null } }[];
-  },
+  candidate: Candidate,
 ): Promise<void> {
   if (!interaction.guildId) return;
 
@@ -149,7 +155,7 @@ const command: Command = {
 
       const searchResults = await playerService.searchPlayers(playerInQuery, CURRENT_SEASON);
 
-      const candidates = searchResults
+      const candidates: Candidate[] = searchResults
         .filter((result) => mapApiPosition(result.statistics[0]?.games?.position) === playerOut.position)
         .slice(0, 25);
 
@@ -178,7 +184,7 @@ const command: Command = {
       const options = candidates.map((result) =>
         new StringSelectMenuOptionBuilder()
           .setLabel(result.player.name)
-          .setDescription(`${result.player.nationality} • Search: ${playerInQuery}`)
+          .setDescription(`Search: ${playerInQuery}`)
           .setValue(`${playerOut.playerId}:${result.player.id}`),
       );
 
