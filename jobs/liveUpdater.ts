@@ -10,60 +10,82 @@ import { logger } from "../utils/logger";
 import type { GoalXClient } from "../client/GoalXClient";
 import type { FootballFixture, FootballEvent } from "../types/football";
 
-const POLL_INTERVAL_MS = 60000;
-
 /**
- * Tracks which events (by a stable composite key) have already been
- * broadcast per fixture, so re-polling the same live match doesn't
- * re-announce goals/cards that were already sent.
+ * Adaptive polling intervals, tuned to API-Football's 100 req/day free tier.
  *
- * This is the exact bug class already fixed once in GoalX's history
- * (dedup Sets wiped on every cron tick because they were re-instantiated
- * inside the callback) — here the Map lives in module scope, created once,
- * and is only ever mutated, never replaced.
+ * Each tick costs 1 request for getLiveFixtures() plus 1 request per
+ * currently-live fixture for getFixtureEvents(). With N live fixtures,
+ * one tick costs (1 + N) requests. At a 100 req/day budget, this table
+ * picks an interval that keeps total daily usage sane even on a busy
+ * matchday, at the cost of slightly slower event detection when many
+ * matches are live simultaneously.
  */
+const BASE_INTERVAL_MS = 60000;
+const MAX_INTERVAL_MS = 300000;
+const IDLE_INTERVAL_MS = 180000;
+
+function computePollInterval(liveFixtureCount: number): number {
+  if (liveFixtureCount === 0) return IDLE_INTERVAL_MS;
+  if (liveFixtureCount <= 2) return BASE_INTERVAL_MS;
+  if (liveFixtureCount <= 5) return 120000;
+  return MAX_INTERVAL_MS;
+}
+
 const seenEventKeys = new Map<number, Set<string>>();
 const seenStatusKeys = new Map<number, Set<string>>();
 const finishedFixtures = new Set<number>();
 
 let isPolling = false;
-let intervalHandle: ReturnType<typeof setInterval> | null = null;
+let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
+let isRunning = false;
 
 function eventKey(event: FootballEvent): string {
   return `${event.type}:${event.detail}:${event.time.elapsed}:${event.time.extra ?? 0}:${event.player.id}`;
 }
 
 export function startLiveUpdater(client: GoalXClient): void {
-  if (intervalHandle) {
+  if (isRunning) {
     logger.warn("Live updater already running, refusing to start a second instance");
     return;
   }
 
-  intervalHandle = setInterval(() => {
-    void pollLiveFixtures(client);
-  }, POLL_INTERVAL_MS);
-
-  logger.info("Live updater started", { intervalMs: POLL_INTERVAL_MS });
+  isRunning = true;
+  scheduleNextPoll(client, BASE_INTERVAL_MS);
+  logger.info("Live updater started", { initialIntervalMs: BASE_INTERVAL_MS });
 }
 
 export function stopLiveUpdater(): void {
-  if (intervalHandle) {
-    clearInterval(intervalHandle);
-    intervalHandle = null;
-    logger.info("Live updater stopped");
+  isRunning = false;
+
+  if (timeoutHandle) {
+    clearTimeout(timeoutHandle);
+    timeoutHandle = null;
   }
+
+  logger.info("Live updater stopped");
+}
+
+function scheduleNextPoll(client: GoalXClient, delayMs: number): void {
+  if (!isRunning) return;
+
+  timeoutHandle = setTimeout(() => {
+    void pollLiveFixtures(client);
+  }, delayMs);
 }
 
 async function pollLiveFixtures(client: GoalXClient): Promise<void> {
   if (isPolling) {
     logger.debug("Skipping live poll tick — previous tick still running");
+    scheduleNextPoll(client, BASE_INTERVAL_MS);
     return;
   }
 
   isPolling = true;
+  let nextInterval = IDLE_INTERVAL_MS;
 
   try {
     const fixtures = await liveService.getLiveFixtures();
+    nextInterval = computePollInterval(fixtures.length);
 
     if (fixtures.length === 0) {
       return;
@@ -93,6 +115,7 @@ async function pollLiveFixtures(client: GoalXClient): Promise<void> {
     logger.error("Live poll tick failed", { error });
   } finally {
     isPolling = false;
+    scheduleNextPoll(client, nextInterval);
   }
 }
 
