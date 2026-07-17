@@ -65,11 +65,6 @@ function scheduleNextPoll(client: GoalXClient, delayMs: number): void {
   }, delayMs);
 }
 
-/**
- * DMs every user who follows this fixture and has dmAlerts enabled.
- * Failures per-user (DMs closed, blocked bot, etc.) are logged and skipped
- * individually so one blocked user doesn't stop the rest from being notified.
- */
 async function notifyFollowers(client: GoalXClient, fixtureId: number, embed: EmbedBuilder): Promise<void> {
   try {
     const followers = await User.find({
@@ -220,8 +215,6 @@ async function broadcastStatusChange(
     await sendToChannel(client, server.guildId, channelId, embed);
   }
 
-  // Followers get kickoff/half-time/full-time DMs regardless of which servers
-  // have a live channel configured — following is per-user, not per-server.
   await notifyFollowers(client, fixture.id, embed);
 }
 
@@ -290,3 +283,46 @@ async function broadcastEvent(
       ...matchBase,
       playerOut: event.assist.name ?? "Unknown",
       playerIn: event.player.name,
+      team: event.team.name,
+      minute,
+    });
+
+    for (const server of servers) {
+      const channelId = server.channels.live;
+      if (!channelId) continue;
+      await sendToChannel(client, server.guildId, channelId, embed);
+    }
+  }
+}
+
+async function sendToChannel(
+  client: GoalXClient,
+  guildId: string,
+  channelId: string,
+  embed: EmbedBuilder,
+): Promise<void> {
+  try {
+    const guild = client.guilds.cache.get(guildId);
+    if (!guild) return;
+
+    const channel = guild.channels.cache.get(channelId) ?? (await guild.channels.fetch(channelId).catch(() => null));
+
+    if (!channel || !channel.isTextBased() || channel.isThread()) return;
+
+    await channel.send({ embeds: [embed] });
+  } catch (error) {
+    logger.error("Failed to send live update to channel", { error, guildId, channelId });
+  }
+}
+
+function cleanupFinishedFixtures(currentlyLiveFixtures: FootballFixture[]): void {
+  const liveIds = new Set(currentlyLiveFixtures.map((f) => f.id));
+
+  for (const fixtureId of seenEventKeys.keys()) {
+    if (!liveIds.has(fixtureId) && finishedFixtures.has(fixtureId)) {
+      seenEventKeys.delete(fixtureId);
+      seenStatusKeys.delete(fixtureId);
+      finishedFixtures.delete(fixtureId);
+    }
+  }
+}
