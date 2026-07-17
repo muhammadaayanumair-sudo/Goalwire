@@ -34,16 +34,16 @@ const VALID_FORMATIONS: FormationRule[] = [
   { label: "5-4-1", GK: 1, DEF: 5, MID: 4, FWD: 1 },
 ];
 
-const POSITION_SELECT_LIMITS: Record<FantasyPosition, { min: number; max: number }> = {
+export const POSITION_SELECT_LIMITS: Record<FantasyPosition, { min: number; max: number }> = {
   GK: { min: 1, max: 1 },
   DEF: { min: 3, max: 5 },
   MID: { min: 2, max: 5 },
   FWD: { min: 1, max: 3 },
 };
 
-const MIN_SQUAD_SIZE = 11;
+export const MIN_SQUAD_SIZE = 11;
 
-function groupByPosition(players: IFantasyPlayer[]): Record<FantasyPosition, IFantasyPlayer[]> {
+export function groupByPosition(players: IFantasyPlayer[]): Record<FantasyPosition, IFantasyPlayer[]> {
   return {
     GK: players.filter((p) => p.position === "GK"),
     DEF: players.filter((p) => p.position === "DEF"),
@@ -52,7 +52,7 @@ function groupByPosition(players: IFantasyPlayer[]): Record<FantasyPosition, IFa
   };
 }
 
-function validateFormation(players: IFantasyPlayer[]): {
+export function validateFormation(players: IFantasyPlayer[]): {
   isValid: boolean;
   formation: string | null;
   issues: string[];
@@ -87,7 +87,7 @@ function validateFormation(players: IFantasyPlayer[]): {
   };
 }
 
-function autoPickStartingXI(players: IFantasyPlayer[]): IFantasyPlayer[] {
+export function autoPickStartingXI(players: IFantasyPlayer[]): IFantasyPlayer[] {
   const clone = players.map((p) => ({ ...p, isStarting: false })) as IFantasyPlayer[];
   const byPosition = groupByPosition(clone);
 
@@ -123,7 +123,7 @@ function autoPickStartingXI(players: IFantasyPlayer[]): IFantasyPlayer[] {
   return clone.map((p) => ({ ...p, isStarting: startingIds.has(p.playerId) })) as IFantasyPlayer[];
 }
 
-function buildLineupEmbed(
+export function buildLineupEmbed(
   teamName: string,
   grouped: Record<FantasyPosition, IFantasyPlayer[]>,
   validation: ReturnType<typeof validateFormation>,
@@ -159,7 +159,7 @@ function buildLineupEmbed(
   });
 }
 
-function buildPositionSelectRows(
+export function buildPositionSelectRows(
   grouped: Record<FantasyPosition, IFantasyPlayer[]>,
 ): ActionRowBuilder<StringSelectMenuBuilder>[] {
   const positionOrder: FantasyPosition[] = ["GK", "DEF", "MID", "FWD"];
@@ -266,13 +266,13 @@ const command: Command = {
           .setEmoji(EMOJIS.CROWN)
           .setStyle(ButtonStyle.Secondary),
         new ButtonBuilder()
-          .setCustomId("lineup_confirm")
+          .setCustomId(CUSTOM_IDS.LINEUP.CONFIRM)
           .setLabel("Confirm Lineup")
           .setEmoji(EMOJIS.CHECK)
           .setStyle(ButtonStyle.Success)
           .setDisabled(!validation.isValid),
         new ButtonBuilder()
-          .setCustomId("lineup_autopick")
+          .setCustomId(CUSTOM_IDS.LINEUP.AUTOPICK)
           .setLabel("Auto-Pick Best XI")
           .setEmoji("🧠")
           .setStyle(ButtonStyle.Primary),
