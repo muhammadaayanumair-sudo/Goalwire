@@ -142,12 +142,11 @@ async function buildTimelineEmbed(fixtureId: number, fixture: FootballFixture): 
   }
 }
 
-async function buildViewPayload(
+function buildControlRows(
   fixtureId: number,
-  fixture: FootballFixture,
   view: ViewMode,
-): Promise<{ embed: EmbedBuilder; row: ActionRowBuilder<ButtonBuilder> }> {
-  const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
+): ActionRowBuilder<ButtonBuilder>[] {
+  const viewRow = new ActionRowBuilder<ButtonBuilder>().addComponents(
     new ButtonBuilder()
       .setCustomId(CUSTOM_IDS.MATCH.STATS)
       .setLabel("Stats")
@@ -166,15 +165,33 @@ async function buildViewPayload(
       .setStyle(ButtonStyle.Success),
   );
 
+  const followRow = new ActionRowBuilder<ButtonBuilder>().addComponents(
+    new ButtonBuilder()
+      .setCustomId(`${CUSTOM_IDS.MATCH.FOLLOW}:${fixtureId}`)
+      .setLabel("Follow")
+      .setEmoji("🔔")
+      .setStyle(ButtonStyle.Secondary),
+  );
+
+  return [viewRow, followRow];
+}
+
+async function buildViewPayload(
+  fixtureId: number,
+  fixture: FootballFixture,
+  view: ViewMode,
+): Promise<{ embed: EmbedBuilder; rows: ActionRowBuilder<ButtonBuilder>[] }> {
+  const rows = buildControlRows(fixtureId, view);
+
   switch (view) {
     case "stats":
-      return { embed: await buildStatsEmbed(fixtureId, fixture), row };
+      return { embed: await buildStatsEmbed(fixtureId, fixture), rows };
     case "lineups":
-      return { embed: await buildLineupsEmbed(fixtureId, fixture), row };
+      return { embed: await buildLineupsEmbed(fixtureId, fixture), rows };
     case "timeline":
-      return { embed: await buildTimelineEmbed(fixtureId, fixture), row };
+      return { embed: await buildTimelineEmbed(fixtureId, fixture), rows };
     default:
-      return { embed: buildOverviewEmbed(fixture), row };
+      return { embed: buildOverviewEmbed(fixture), rows };
   }
 }
 
@@ -205,17 +222,28 @@ const command: Command = {
         return;
       }
 
-      const { embed, row } = await buildViewPayload(fixtureId, fixture, currentView);
-      const message = await interaction.editReply({ embeds: [embed], components: [row] });
+      const { embed, rows } = await buildViewPayload(fixtureId, fixture, currentView);
+      const message = await interaction.editReply({ embeds: [embed], components: rows });
 
       const collector = message.createMessageComponentCollector({
         componentType: ComponentType.Button,
         time: COLLECTOR_TIMEOUT_MS,
-        filter: (i) => i.user.id === interaction.user.id,
+        // Follow is per-user and intentionally NOT filtered to the original
+        // requester — anyone viewing the match can follow it. Everything
+        // else (view switching, refresh) stays requester-only.
+        filter: (i) =>
+          i.customId.startsWith(CUSTOM_IDS.MATCH.FOLLOW) || i.user.id === interaction.user.id,
       });
 
       collector.on("collect", async (buttonInteraction) => {
         try {
+          if (buttonInteraction.customId.startsWith(CUSTOM_IDS.MATCH.FOLLOW)) {
+            // Let the global componentHandler route this one — it needs its
+            // own ephemeral reply, not a shared message edit, and is handled
+            // by components/buttons/matchButtons.ts.
+            return;
+          }
+
           if (buttonInteraction.customId === CUSTOM_IDS.MATCH.REFRESH) {
             const timeSinceRefresh = Date.now() - lastRefresh;
             if (timeSinceRefresh < REFRESH_COOLDOWN_MS) {
@@ -253,13 +281,13 @@ const command: Command = {
             return;
           }
 
-          const { embed: updatedEmbed, row: updatedRow } = await buildViewPayload(
+          const { embed: updatedEmbed, rows: updatedRows } = await buildViewPayload(
             fixtureId,
             freshFixture,
             currentView,
           );
 
-          await interaction.editReply({ embeds: [updatedEmbed], components: [updatedRow] });
+          await interaction.editReply({ embeds: [updatedEmbed], components: updatedRows });
         } catch (error) {
           logger.error("Error handling match view interaction", { error, fixtureId });
           await buttonInteraction.followUp({
@@ -273,10 +301,12 @@ const command: Command = {
         if (reason === "fixture_gone") return;
 
         try {
-          const disabledRow = new ActionRowBuilder<ButtonBuilder>().addComponents(
-            ...row.components.map((c) => ButtonBuilder.from(c as ButtonBuilder).setDisabled(true)),
+          const disabledRows = rows.map((row) =>
+            new ActionRowBuilder<ButtonBuilder>().addComponents(
+              ...row.components.map((c) => ButtonBuilder.from(c as ButtonBuilder).setDisabled(true)),
+            ),
           );
-          await interaction.editReply({ components: [disabledRow] });
+          await interaction.editReply({ components: disabledRows });
         } catch (error) {
           logger.warn("Failed to disable match view buttons on timeout", { error });
         }
