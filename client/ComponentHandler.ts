@@ -1,4 +1,4 @@
-import { readdirSync } from "fs";
+import { readdirSync, existsSync } from "fs";
 import { join } from "path";
 import { Collection, Interaction } from "discord.js";
 import type { GoalXClient } from "./GoalXClient";
@@ -32,9 +32,26 @@ export class ComponentHandler {
     collection: Collection<string, ButtonComponent | SelectMenuComponent | ModalComponent>,
   ): Promise<void> {
     const folderPath = join(this.componentsPath, folder);
-    const files = readdirSync(folderPath).filter(
-      (file) => file.endsWith(".ts") || file.endsWith(".js"),
-    );
+
+    if (!existsSync(folderPath)) {
+      logger.warn(`Component folder "${folder}" does not exist yet — skipping (0 components loaded)`, {
+        folderPath,
+      });
+      return;
+    }
+
+    let files: string[];
+    try {
+      files = readdirSync(folderPath).filter((file) => file.endsWith(".ts") || file.endsWith(".js"));
+    } catch (error) {
+      logger.error(`Failed to read component folder "${folder}"`, { error, folderPath });
+      return;
+    }
+
+    if (files.length === 0) {
+      logger.info(`Component folder "${folder}" is empty — 0 components loaded`);
+      return;
+    }
 
     for (const file of files) {
       try {
@@ -56,7 +73,7 @@ export class ComponentHandler {
           collection.set(item.customId, item);
         }
       } catch (error) {
-        logger.error(`Failed to load component ${folder}/${file}`, { error });
+        logger.error(`Failed to load component ${folder}/${file}`, { error, folderPath });
       }
     }
   }
@@ -69,7 +86,12 @@ export class ComponentHandler {
         return;
       }
 
-      if (interaction.isStringSelectMenu() || interaction.isUserSelectMenu() || interaction.isRoleSelectMenu() || interaction.isChannelSelectMenu()) {
+      if (
+        interaction.isStringSelectMenu() ||
+        interaction.isUserSelectMenu() ||
+        interaction.isRoleSelectMenu() ||
+        interaction.isChannelSelectMenu()
+      ) {
         const component = this.matchComponent(this.selectMenus, interaction.customId);
         if (component) await component.execute(this.client, interaction);
         return;
@@ -81,7 +103,10 @@ export class ComponentHandler {
         return;
       }
     } catch (error) {
-      logger.error("Error routing interaction", { error, customId: (interaction as { customId?: string }).customId });
+      logger.error("Error routing interaction", {
+        error,
+        customId: (interaction as { customId?: string }).customId,
+      });
     }
   }
 
