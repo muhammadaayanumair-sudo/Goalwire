@@ -3,11 +3,18 @@ import type { GoalXClient } from "../../client/GoalXClient";
 import type { ButtonComponent } from "../../types/discord";
 import { fantasyService } from "../../services/fantasy/FantasyService";
 import { rankingService } from "../../services/fantasy/RankingService";
-import { errorEmbed, fantasyEmbed } from "../../utils/embeds";
+import { errorEmbed, fantasyEmbed, successEmbed } from "../../utils/embeds";
 import { CUSTOM_IDS, EMOJIS, FANTASY_POSITIONS } from "../../config/constants";
-import { formatCurrency, formatOrdinal, formatPoints } from "../../utils/formatter";
+import { formatCurrency, formatPoints } from "../../utils/formatter";
 import { logger } from "../../utils/logger";
 import type { FantasyPosition } from "../../types/fantasy";
+import {
+  groupByPosition,
+  validateFormation,
+  autoPickStartingXI,
+  buildLineupEmbed,
+  buildPositionSelectRows,
+} from "../../commands/fantasy/lineup";
 
 const POSITION_ORDER: FantasyPosition[] = ["GK", "DEF", "MID", "FWD"];
 
@@ -203,6 +210,99 @@ async function handleBack(client: GoalXClient, interaction: ButtonInteraction): 
   await handleMyTeam(client, interaction);
 }
 
+async function handleLineupConfirm(client: GoalXClient, interaction: ButtonInteraction): Promise<void> {
+  await interaction.deferUpdate();
+
+  if (!interaction.guildId) return;
+
+  try {
+    const team = await fantasyService.getTeam(interaction.user.id, interaction.guildId);
+
+    if (!team) {
+      await interaction.editReply({
+        embeds: [errorEmbed("You don't have a fantasy team yet.")],
+        components: [],
+      });
+      return;
+    }
+
+    const validation = validateFormation(team.players);
+
+    if (!validation.isValid) {
+      await interaction.editReply({
+        embeds: [
+          errorEmbed(
+            `Your lineup isn't valid yet: ${validation.issues.join(" ")} Adjust your position selections and try again.`,
+          ),
+        ],
+      });
+      return;
+    }
+
+    const startingIds = team.players.filter((p) => p.isStarting).map((p) => p.playerId);
+    await fantasyService.setStartingLineup(interaction.user.id, interaction.guildId, startingIds);
+
+    await interaction.editReply({
+      embeds: [
+        successEmbed(
+          `Your **${validation.formation}** lineup is locked in for Gameweek ${team.currentGameweek}. Good luck!`,
+          "Lineup Confirmed",
+        ),
+      ],
+      components: [],
+    });
+  } catch (error) {
+    logger.error("Error confirming lineup", { error, userId: interaction.user.id });
+
+    const message = error instanceof Error ? error.message : "Failed to confirm your lineup.";
+    await interaction.editReply({ embeds: [errorEmbed(message)], components: [] });
+  }
+}
+
+async function handleLineupAutopick(client: GoalXClient, interaction: ButtonInteraction): Promise<void> {
+  await interaction.deferUpdate();
+
+  if (!interaction.guildId) return;
+
+  try {
+    const team = await fantasyService.getTeam(interaction.user.id, interaction.guildId);
+
+    if (!team) {
+      await interaction.editReply({
+        embeds: [errorEmbed("You don't have a fantasy team yet.")],
+        components: [],
+      });
+      return;
+    }
+
+    if (team.isLocked) {
+      await interaction.editReply({
+        embeds: [errorEmbed("Your lineup is locked for this gameweek.")],
+        components: [],
+      });
+      return;
+    }
+
+    const autoPicked = autoPickStartingXI(team.players);
+    const startingIds = autoPicked.filter((p) => p.isStarting).map((p) => p.playerId);
+
+    await fantasyService.setStartingLineup(interaction.user.id, interaction.guildId, startingIds);
+
+    const grouped = groupByPosition(autoPicked);
+    const validation = validateFormation(autoPicked);
+
+    const embed = buildLineupEmbed(team.teamName, grouped, validation, true);
+    const rows = buildPositionSelectRows(grouped);
+
+    await interaction.editReply({ embeds: [embed], components: rows });
+  } catch (error) {
+    logger.error("Error auto-picking lineup", { error, userId: interaction.user.id });
+
+    const message = error instanceof Error ? error.message : "Failed to auto-pick your lineup.";
+    await interaction.editReply({ embeds: [errorEmbed(message)], components: [] });
+  }
+}
+
 const fantasyButtons: ButtonComponent[] = [
   { customId: CUSTOM_IDS.FANTASY.MY_TEAM, execute: handleMyTeam },
   { customId: CUSTOM_IDS.FANTASY.AI_SCOUT, execute: handleAiScout },
@@ -210,6 +310,8 @@ const fantasyButtons: ButtonComponent[] = [
   { customId: CUSTOM_IDS.FANTASY.CAPTAIN, execute: handleCaptain },
   { customId: CUSTOM_IDS.FANTASY.LEADERBOARD, execute: handleLeaderboard },
   { customId: CUSTOM_IDS.FANTASY.BACK, execute: handleBack },
+  { customId: CUSTOM_IDS.LINEUP.CONFIRM, execute: handleLineupConfirm },
+  { customId: CUSTOM_IDS.LINEUP.AUTOPICK, execute: handleLineupAutopick },
 ];
 
 export default fantasyButtons;
