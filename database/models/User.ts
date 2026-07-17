@@ -1,5 +1,13 @@
 import { Schema, model, Document, Types } from "mongoose";
 
+export interface IUserEconomy {
+  marketValue: number;
+  tokens: number;
+  level: number;
+  dailyStreak: number;
+  lastDailyClaim?: Date;
+}
+
 export interface IUser extends Document {
   discordId: string;
   username: string;
@@ -9,6 +17,7 @@ export interface IUser extends Document {
   favoriteLeagueId?: number;
   fantasyTeamId?: Types.ObjectId;
   followedFixtures: number[];
+  economy: IUserEconomy;
   stats: {
     predictionsMade: number;
     predictionsCorrect: number;
@@ -42,6 +51,13 @@ const UserSchema = new Schema<IUser>(
         message: `Cannot follow more than ${MAX_FOLLOWED_FIXTURES} fixtures at once.`,
       },
     },
+    economy: {
+      marketValue: { type: Number, default: 0, min: 0 },
+      tokens: { type: Number, default: 0, min: 0 },
+      level: { type: Number, default: 1, min: 1 },
+      dailyStreak: { type: Number, default: 0, min: 0 },
+      lastDailyClaim: { type: Date },
+    },
     stats: {
       predictionsMade: { type: Number, default: 0 },
       predictionsCorrect: { type: Number, default: 0 },
@@ -56,8 +72,8 @@ const UserSchema = new Schema<IUser>(
   { timestamps: true },
 );
 
-// Index to make liveUpdater.ts's "who follows fixture X" lookup fast without
-// scanning every user document on every poll tick.
 UserSchema.index({ followedFixtures: 1 });
+UserSchema.index({ "economy.marketValue": -1 });
+UserSchema.index({ "economy.tokens": -1 });
 
 export const User = model<IUser>("User", UserSchema);
