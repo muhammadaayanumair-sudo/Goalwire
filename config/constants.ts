@@ -1,5 +1,3 @@
-export const COLORS_PLACEHOLDER = null;
-
 export const EMBED_LIMITS = {
   TITLE_MAX_LENGTH: 256,
   DESCRIPTION_MAX_LENGTH: 4096,
@@ -49,6 +47,10 @@ export const CUSTOM_IDS = {
     TIMELINE: "match_timeline",
     REFRESH: "match_refresh",
     FOLLOW: "match_follow",
+  },
+  LINEUP: {
+    CONFIRM: "lineup_confirm",
+    AUTOPICK: "lineup_autopick",
   },
   PAGINATION: {
     FIRST: "page_first",
