@@ -1,4 +1,4 @@
-import { Events, Interaction } from "discord.js";
+import { Events, Interaction, GuildMember } from "discord.js";
 import type { GoalXClient } from "../client/GoalXClient";
 import type { BotEvent } from "../types/discord";
 import { errorEmbed } from "../utils/embeds";
@@ -8,7 +8,9 @@ const event: BotEvent = {
   name: Events.InteractionCreate,
   once: false,
 
-  async execute(client: GoalXClient, interaction: Interaction): Promise<void> {
+  async execute(client: GoalXClient, ...args: unknown[]): Promise<void> {
+    const interaction = args[0] as Interaction;
+
     try {
       if (interaction.isChatInputCommand()) {
         const command = client.commandHandler.getCommand(interaction.commandName);
@@ -43,9 +45,10 @@ const event: BotEvent = {
         }
 
         if (command.permissions?.length) {
-          const member = interaction.member;
+          const member = interaction.member as GuildMember | null;
+
           const hasAllPermissions =
-            member && "permissions" in member && typeof member.permissions !== "string"
+            member instanceof GuildMember
               ? command.permissions.every((perm) => member.permissions.has(perm))
               : false;
 
