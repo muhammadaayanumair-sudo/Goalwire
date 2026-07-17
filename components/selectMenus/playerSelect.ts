@@ -6,22 +6,12 @@ import { transferService, TransferError } from "../../services/fantasy/TransferS
 import { playerService } from "../../services/football/PlayerService";
 import { errorEmbed, fantasyEmbed, warningEmbed } from "../../utils/embeds";
 import { CUSTOM_IDS, EMOJIS } from "../../config/constants";
-import { formatCurrency } from "../../utils/formatter";
 import { logger } from "../../utils/logger";
 import type { FantasyPlayerPool, FantasyPosition } from "../../types/fantasy";
+import { validateFormation } from "../../commands/fantasy/lineup";
 
 const CURRENT_SEASON = new Date().getFullYear();
 
-/**
- * lineup.ts renders one select menu PER position (select_player_gk,
- * select_player_def, etc.) so no single menu exceeds Discord's 25-option
- * cap. Each selection here only updates that position's starters in
- * memory-equivalent terms — the actual persisted lineup is written via
- * fantasyService.setStartingLineup once the user hits "Confirm Lineup"
- * (handled separately below), not on every single select-menu change.
- * This handler's job is just to acknowledge the pick and show the running
- * state back to the user.
- */
 async function handlePlayerPositionSelect(
   client: GoalXClient,
   interaction: AnySelectMenuInteraction,
@@ -46,11 +36,17 @@ async function handlePlayerPositionSelect(
 
     await team.save();
 
+    const validation = validateFormation(team.players);
+
+    const statusLine = validation.isValid
+      ? `${EMOJIS.CHECK} Your lineup is valid: **${validation.formation}**. Run \`/lineup\` and hit **Confirm Lineup** to lock it in.`
+      : `${EMOJIS.WARNING} ${validation.issues.join(" ")} Adjust the other position menus in \`/lineup\` before confirming.`;
+
     await select.followUp({
       embeds: [
         fantasyEmbed({
-          title: `${EMOJIS.CHECK} ${position} Selection Updated`,
-          description: `Updated. Run \`/lineup\` again to review your full XI, or hit **Confirm Lineup** if you're already viewing it.`,
+          title: `${position} Selection Updated`,
+          description: statusLine,
         }),
       ],
       ephemeral: true,
@@ -64,10 +60,6 @@ async function handlePlayerPositionSelect(
   }
 }
 
-/**
- * transfer.ts's replacement-picker menu. customId format:
- * "\${CUSTOM_IDS.MODAL.TRANSFER}_confirm", values: ["<playerOutId>:<candidatePlayerId>"]
- */
 async function handleTransferConfirmSelect(
   client: GoalXClient,
   interaction: AnySelectMenuInteraction,
