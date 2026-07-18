@@ -3,6 +3,7 @@ import type { GoalXClient } from "../../client/GoalXClient";
 import type { ButtonComponent } from "../../types/discord";
 import { fantasyService } from "../../services/fantasy/FantasyService";
 import { rankingService } from "../../services/fantasy/RankingService";
+import { economyService } from "../../services/economy/EconomyService";
 import { errorEmbed, fantasyEmbed, successEmbed } from "../../utils/embeds";
 import { CUSTOM_IDS, EMOJIS, FANTASY_POSITIONS } from "../../config/constants";
 import { formatCurrency, formatPoints } from "../../utils/formatter";
@@ -242,10 +243,20 @@ async function handleLineupConfirm(client: GoalXClient, interaction: ButtonInter
     const startingIds = team.players.filter((p) => p.isStarting).map((p) => p.playerId);
     await fantasyService.setStartingLineup(interaction.user.id, interaction.guildId, startingIds);
 
+    let rewardLine = "";
+    try {
+      const reward = await economyService.award(interaction.user.id, interaction.user.username, "lineup_set");
+      rewardLine = `\n\n+${reward.marketValueGained} Market Value, +${reward.tokensGained} Tokens`;
+      if (reward.leveledUp) rewardLine += ` — ${EMOJIS.STAR} Level ${reward.newLevel}!`;
+    } catch (economyError) {
+      // Economy reward failing should never block the lineup itself from being confirmed.
+      logger.warn("Failed to award economy reward for lineup confirm", { error: economyError });
+    }
+
     await interaction.editReply({
       embeds: [
         successEmbed(
-          `Your **${validation.formation}** lineup is locked in for Gameweek ${team.currentGameweek}. Good luck!`,
+          `Your **${validation.formation}** lineup is locked in for Gameweek ${team.currentGameweek}. Good luck!${rewardLine}`,
           "Lineup Confirmed",
         ),
       ],
