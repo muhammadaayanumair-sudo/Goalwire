@@ -2,6 +2,7 @@ import { Events, Interaction, GuildMember } from "discord.js";
 import type { GoalXClient } from "../client/GoalXClient";
 import type { BotEvent } from "../types/discord";
 import { errorEmbed } from "../utils/embeds";
+import { economyService } from "../services/economy/EconomyService";
 import { logger } from "../utils/logger";
 
 const event: BotEvent = {
@@ -62,6 +63,24 @@ const event: BotEvent = {
         }
 
         await command.execute(client, interaction);
+
+        // Broader-activity XP: any successfully executed command can award
+        // command_used XP, gated by EconomyService's own 10-minute cooldown
+        // (not this command's per-command cooldown) so users can't farm XP
+        // by rotating between different commands rapidly. Runs after
+        // command.execute() and is fire-and-forget from the user's
+        // perspective — failures here must never surface as a user-facing
+        // error for an otherwise-successful command.
+        try {
+          await economyService.awardCommandUsage(interaction.user.id, interaction.user.username);
+        } catch (economyError) {
+          logger.warn("Failed to award command-usage XP", {
+            error: economyError,
+            userId: interaction.user.id,
+            commandName: interaction.commandName,
+          });
+        }
+
         return;
       }
 
