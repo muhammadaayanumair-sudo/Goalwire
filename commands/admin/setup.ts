@@ -37,8 +37,9 @@ const command: Command = {
     .addSubcommand((sub) =>
       sub.setName("notifications").setDescription("Configure which auto-post notifications are enabled"),
     )
-    .addSubcommand((sub) => sub.setName("view").setDescription("View current GoalX configuration for this server"))
-    as SlashCommandBuilder,
+    .addSubcommand((sub) =>
+      sub.setName("view").setDescription("View current GoalX configuration for this server"),
+    ) as SlashCommandBuilder,
   category: "admin",
   cooldown: 5,
   permissions: [PermissionFlagsBits.Administrator],
@@ -84,12 +85,6 @@ async function handleChannelsSetup(interaction: ChatInputCommandInteraction): Pr
     fields: CHANNEL_PURPOSES.map((p) => ({ name: p.label, value: p.description, inline: false })),
   });
 
-  // Discord limits 1 select menu per action row, so this is 6 rows —
-  // right at ActionRow's practical limit for a single message (5 rows max
-  // for components alongside an embed in most clients' rendering, though
-  // Discord's hard cap is 5 action rows total). We're at exactly 6 channel
-  // purposes here, which would exceed that — split into two messages instead
-  // of silently truncating the last purpose.
   const firstBatch = CHANNEL_PURPOSES.slice(0, 5);
   const secondBatch = CHANNEL_PURPOSES.slice(5);
 
