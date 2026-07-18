@@ -12,7 +12,6 @@ import { matchService, MatchServiceError } from "../../services/football/MatchSe
 import { errorEmbed, predictionEmbed, liveEmbed } from "../../utils/embeds";
 import { formatDate } from "../../utils/formatter";
 import { logger } from "../../utils/logger";
-import type { FootballFixture } from "../../types/football";
 
 const MAX_SEARCH_RESULTS = 5;
 const SEARCH_COLLECTOR_TIMEOUT_MS = 60000;
