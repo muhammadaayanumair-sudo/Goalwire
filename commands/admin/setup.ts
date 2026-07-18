@@ -8,7 +8,7 @@ import {
 } from "discord.js";
 import type { Command } from "../../types/discord";
 import { Server } from "../../database/models/Server";
-import { errorEmbed, successEmbed, fantasyEmbed } from "../../utils/embeds";
+import { errorEmbed, fantasyEmbed } from "../../utils/embeds";
 import { EMOJIS } from "../../config/constants";
 import { logger } from "../../utils/logger";
 
