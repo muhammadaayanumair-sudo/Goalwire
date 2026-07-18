@@ -16,10 +16,23 @@ interface BaseEmbedOptions {
   url?: string;
 }
 
-const DEFAULT_FOOTER = "GoalX • Fantasy Football Assistant";
+const BRAND_FOOTER = "GoalX";
+const BRAND_TAGLINE = "Fantasy Football Assistant";
 
 function truncate(text: string, max: number): string {
   return text.length > max ? `${text.slice(0, max - 3)}...` : text;
+}
+
+/**
+ * Builds a richer footer with a small separator dot between brand and
+ * context, e.g. "GoalX • Fantasy Football Assistant" or, when a custom
+ * footerText is given, "GoalX • <footerText>" — keeping brand presence
+ * consistent across every embed without repeating the full tagline when
+ * something more specific is more useful.
+ */
+function buildFooterText(custom?: string): string {
+  if (!custom) return `${BRAND_FOOTER} • ${BRAND_TAGLINE}`;
+  return `${BRAND_FOOTER} • ${custom}`;
 }
 
 export function buildEmbed(options: BaseEmbedOptions): EmbedBuilder {
@@ -45,7 +58,7 @@ export function buildEmbed(options: BaseEmbedOptions): EmbedBuilder {
   }
 
   embed.setFooter({
-    text: truncate(options.footerText ?? DEFAULT_FOOTER, EMBED_LIMITS.FOOTER_MAX_LENGTH),
+    text: truncate(buildFooterText(options.footerText), EMBED_LIMITS.FOOTER_MAX_LENGTH),
     iconURL: options.footerIcon,
   });
 
@@ -55,19 +68,19 @@ export function buildEmbed(options: BaseEmbedOptions): EmbedBuilder {
 }
 
 export function successEmbed(description: string, title = "Success"): EmbedBuilder {
-  return buildEmbed({ title: `✅ ${title}`, description, color: COLORS.SUCCESS });
+  return buildEmbed({ title: `${EMOJIS.CHECK} ${title}`, description, color: COLORS.SUCCESS });
 }
 
 export function errorEmbed(description: string, title = "Error"): EmbedBuilder {
-  return buildEmbed({ title: `❌ ${title}`, description, color: COLORS.ERROR });
+  return buildEmbed({ title: `${EMOJIS.CROSS} ${title}`, description, color: COLORS.ERROR });
 }
 
 export function warningEmbed(description: string, title = "Warning"): EmbedBuilder {
-  return buildEmbed({ title: `⚠️ ${title}`, description, color: COLORS.WARNING });
+  return buildEmbed({ title: `${EMOJIS.WARNING} ${title}`, description, color: COLORS.WARNING });
 }
 
 export function loadingEmbed(description = "Fetching data..."): EmbedBuilder {
-  return buildEmbed({ title: "⏳ Loading", description, color: COLORS.LOADING, timestamp: false });
+  return buildEmbed({ title: `${EMOJIS.LOADING} Loading`, description, color: COLORS.LOADING, timestamp: false });
 }
 
 export function fantasyEmbed(options: BaseEmbedOptions): EmbedBuilder {
@@ -99,6 +112,25 @@ export function announcementEmbed(options: BaseEmbedOptions & { emoji?: string }
   });
 }
 
+/**
+ * Renders a thin visual divider as a field — Discord embeds have no native
+ * horizontal rule, so a zero-width-safe blank-value field with a dash line
+ * is the common trick for visually separating sections within one embed.
+ */
+export function dividerField(label?: string): { name: string; value: string; inline: boolean } {
+  return {
+    name: label ? `˖ ${label} ˖` : "\u200b",
+    value: "▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬",
+    inline: false,
+  };
+}
+
+export function buildProgressBar(progress: number, length = 12): string {
+  const clamped = Math.max(0, Math.min(1, progress));
+  const filled = Math.round(clamped * length);
+  return "▰".repeat(filled) + "▱".repeat(length - filled);
+}
+
 interface GoalScorer {
   minute: string;
   player: string;
@@ -116,7 +148,6 @@ interface MatchEventBase {
   competition: string;
 }
 
-/** ⚽ Goal notification — fired the moment a goal event comes through the live poller. */
 export function goalEmbed(
   options: MatchEventBase & {
     scorerName: string;
@@ -129,22 +160,21 @@ export function goalEmbed(
 ): EmbedBuilder {
   const { scorerName, scorerTeam, minute, assistName, isPenalty, isOwnGoal, ...match } = options;
 
-  const goalTag = isOwnGoal ? " (Own Goal)" : isPenalty ? " (Penalty)" : "";
-  const assistLine = assistName ? `\nAssist: **${assistName}**` : "";
+  const goalTag = isOwnGoal ? " *(Own Goal)*" : isPenalty ? " *(Penalty)*" : "";
+  const assistLine = assistName ? `\n${EMOJIS.ARROW_RIGHT} Assist: **${assistName}**` : "";
 
   return buildEmbed({
-    title: `${EMOJIS.GOAL} GOAL! ${scorerTeam}`,
+    title: `${EMOJIS.GOAL} GOAL! — ${scorerTeam}`,
     description: [
       `**${scorerName}**${goalTag} scores at \`${minute}\`${assistLine}`,
       "",
-      `**${match.homeTeam}** \`${match.homeScore}\` - \`${match.awayScore}\` **${match.awayTeam}**`,
+      `## ${match.homeTeam}  \`${match.homeScore}\` - \`${match.awayScore}\`  ${match.awayTeam}`,
     ].join("\n"),
     color: COLORS.GOAL,
-    footerText: `${match.competition} • GoalX Live`,
+    footerText: `${match.competition} • Live`,
   });
 }
 
-/** 🟨🟥 Card notification. */
 export function cardEmbed(
   options: MatchEventBase & {
     playerName: string;
@@ -156,21 +186,24 @@ export function cardEmbed(
   const { playerName, playerTeam, minute, cardType, ...match } = options;
 
   const cardLabel =
-    cardType === "yellow" ? `${EMOJIS.CARD_YELLOW} Yellow Card` : cardType === "second_yellow" ? `${EMOJIS.CARD_YELLOW}${EMOJIS.CARD_YELLOW} Second Yellow — Sent Off` : `${EMOJIS.CARD_RED} Red Card`;
+    cardType === "yellow"
+      ? `${EMOJIS.CARD_YELLOW} Yellow Card`
+      : cardType === "second_yellow"
+        ? `${EMOJIS.CARD_YELLOW}${EMOJIS.CARD_YELLOW} Second Yellow — Sent Off`
+        : `${EMOJIS.CARD_RED} Red Card`;
 
   return buildEmbed({
     title: cardLabel,
     description: [
-      `**${playerName}** (${playerTeam}) at \`${minute}\``,
+      `**${playerName}** *(${playerTeam})* at \`${minute}\``,
       "",
-      `**${match.homeTeam}** \`${match.homeScore}\` - \`${match.awayScore}\` **${match.awayTeam}**`,
+      `## ${match.homeTeam}  \`${match.homeScore}\` - \`${match.awayScore}\`  ${match.awayTeam}`,
     ].join("\n"),
     color: cardType === "yellow" ? COLORS.YELLOW_CARD : COLORS.RED_CARD,
-    footerText: `${match.competition} • GoalX Live`,
+    footerText: `${match.competition} • Live`,
   });
 }
 
-/** 🔁 Substitution notification. */
 export function substitutionEmbed(
   options: MatchEventBase & {
     playerOut: string;
@@ -184,16 +217,15 @@ export function substitutionEmbed(
   return buildEmbed({
     title: `${EMOJIS.SUBSTITUTION} Substitution — ${team}`,
     description: [
-      `\`${minute}\` **${playerIn}** replaces **${playerOut}**`,
+      `\`${minute}\` **${playerIn}** ${EMOJIS.ARROW_RIGHT} replaces ${EMOJIS.ARROW_LEFT} **${playerOut}**`,
       "",
-      `**${match.homeTeam}** \`${match.homeScore}\` - \`${match.awayScore}\` **${match.awayTeam}**`,
+      `## ${match.homeTeam}  \`${match.homeScore}\` - \`${match.awayScore}\`  ${match.awayTeam}`,
     ].join("\n"),
     color: COLORS.INFO,
-    footerText: `${match.competition} • GoalX Live`,
+    footerText: `${match.competition} • Live`,
   });
 }
 
-/** 🩹 Injury / VAR review notification. */
 export function matchAlertEmbed(
   options: MatchEventBase & {
     alertType: "injury" | "var" | "penalty_awarded" | "penalty_missed";
@@ -206,8 +238,8 @@ export function matchAlertEmbed(
   const titleMap: Record<typeof alertType, string> = {
     injury: `${EMOJIS.INJURY} Injury Stoppage`,
     var: "📺 VAR Review",
-    penalty_awarded: "⚽ Penalty Awarded",
-    penalty_missed: "❌ Penalty Missed",
+    penalty_awarded: `${EMOJIS.GOAL} Penalty Awarded`,
+    penalty_missed: `${EMOJIS.CROSS} Penalty Missed`,
   };
 
   return buildEmbed({
@@ -215,14 +247,13 @@ export function matchAlertEmbed(
     description: [
       `\`${minute}\` ${detail}`,
       "",
-      `**${match.homeTeam}** \`${match.homeScore}\` - \`${match.awayScore}\` **${match.awayTeam}**`,
+      `## ${match.homeTeam}  \`${match.homeScore}\` - \`${match.awayScore}\`  ${match.awayTeam}`,
     ].join("\n"),
     color: COLORS.WARNING,
-    footerText: `${match.competition} • GoalX Live`,
+    footerText: `${match.competition} • Live`,
   });
 }
 
-/** 🏁 Kickoff / Half-time / Full-time status embeds, with full goal-scorer breakdown. */
 export function matchStatusEmbed(
   options: MatchEventBase & {
     status: "kickoff" | "halftime" | "fulltime";
@@ -241,13 +272,14 @@ export function matchStatusEmbed(
   const fields: { name: string; value: string; inline?: boolean }[] = [];
 
   if (goalScorers && goalScorers.length > 0) {
+    fields.push(dividerField("Goalscorers"));
     fields.push({
       name: `${EMOJIS.GOAL} Goals`,
       value: goalScorers
         .map((g) => {
-          const tag = g.isOwnGoal ? " (OG)" : g.isPenalty ? " (P)" : "";
-          const assist = g.assist ? ` — assist: ${g.assist}` : "";
-          return `\`${g.minute}\` **${g.player}**${tag} (${g.team})${assist}`;
+          const tag = g.isOwnGoal ? " *(OG)*" : g.isPenalty ? " *(P)*" : "";
+          const assist = g.assist ? ` — assist: *${g.assist}*` : "";
+          return `\`${g.minute}\` **${g.player}**${tag} *(${g.team})*${assist}`;
         })
         .join("\n"),
       inline: false,
@@ -255,19 +287,18 @@ export function matchStatusEmbed(
   }
 
   if (venue) {
-    fields.push({ name: "Venue", value: venue, inline: true });
+    fields.push({ name: "📍 Venue", value: venue, inline: true });
   }
 
   return buildEmbed({
     title: titleMap[status],
-    description: `**${match.homeTeam}** \`${match.homeScore}\` - \`${match.awayScore}\` **${match.awayTeam}**`,
+    description: `## ${match.homeTeam}  \`${match.homeScore}\` - \`${match.awayScore}\`  ${match.awayTeam}`,
     fields,
     color: status === "fulltime" ? COLORS.SECONDARY : status === "halftime" ? COLORS.INFO : COLORS.LIVE,
-    footerText: `${match.competition} • GoalX Live`,
+    footerText: `${match.competition} • Live`,
   });
 }
 
-/** Legacy alias kept for backward compatibility with existing callers. */
 export function matchEventEmbed(options: {
   headline: string;
   homeTeam: string;
@@ -285,7 +316,7 @@ export function matchEventEmbed(options: {
   if (goalScorers && goalScorers.length > 0) {
     fields.push({
       name: `${EMOJIS.GOAL} Goals`,
-      value: goalScorers.map((g) => `\`${g.minute}\` **${g.player}** (${g.team})`).join("\n"),
+      value: goalScorers.map((g) => `\`${g.minute}\` **${g.player}** *(${g.team})*`).join("\n"),
       inline: false,
     });
   }
@@ -293,16 +324,15 @@ export function matchEventEmbed(options: {
   return buildEmbed({
     title: headline,
     description: [
-      `**${match.homeTeam}** \`${match.homeScore}\` - \`${match.awayScore}\` **${match.awayTeam}**`,
+      `## ${match.homeTeam}  \`${match.homeScore}\` - \`${match.awayScore}\`  ${match.awayTeam}`,
       minuteLabel ? `\n${minuteLabel}` : "",
     ].join(""),
     fields,
     color: isFullTime ? COLORS.SECONDARY : COLORS.LIVE,
-    footerText: `${match.competition} • GoalX Live`,
+    footerText: `${match.competition} • Live`,
   });
 }
 
-/** 🔮 Score prediction card — user locks in a scoreline prediction. */
 export function predictionEmbed(options: {
   username: string;
   homeScore: number;
@@ -314,15 +344,14 @@ export function predictionEmbed(options: {
     title: "Prediction Locked In",
     description: [
       `**${options.username}** predicts:`,
-      `Home \`${options.homeScore}\` - \`${options.awayScore}\` Away`,
+      `## Home \`${options.homeScore}\` - \`${options.awayScore}\` Away`,
       "",
-      options.fixtureLabel,
+      `*${options.fixtureLabel}*`,
     ].join("\n"),
-    color: COLORS.AI,
+    color: COLORS.PREDICTION,
   });
 }
 
-/** 🚨 Transfer news card. */
 export function transferNewsEmbed(options: {
   headline: string;
   summary: string;
@@ -336,6 +365,38 @@ export function transferNewsEmbed(options: {
     image: options.imageUrl,
     url: options.sourceUrl,
     color: COLORS.NEWS,
-    footerText: `Source: ${options.source} • GoalX News`,
+    footerText: `Source: ${options.source} • News`,
+  });
+}
+
+/**
+ * Rich economy reward embed used after actions that grant Market Value
+ * and/or Tokens (lineup confirm, transfer, challenge win, predictions).
+ * Distinct from a plain successEmbed — shows the gain clearly with icons
+ * plus an optional level-up celebration line.
+ */
+export function economyRewardEmbed(options: {
+  title: string;
+  description: string;
+  marketValueGained: number;
+  tokensGained: number;
+  leveledUp?: boolean;
+  newLevel?: number;
+}): EmbedBuilder {
+  const fields: { name: string; value: string; inline?: boolean }[] = [
+    { name: "📈 Market Value", value: `+${options.marketValueGained}`, inline: true },
+    { name: "🪙 Tokens", value: `+${options.tokensGained}`, inline: true },
+  ];
+
+  if (options.leveledUp && options.newLevel) {
+    fields.push(dividerField());
+    fields.push({ name: `${EMOJIS.STAR} Level Up!`, value: `You've reached **Level ${options.newLevel}**`, inline: false });
+  }
+
+  return buildEmbed({
+    title: `${EMOJIS.CHECK} ${options.title}`,
+    description: options.description,
+    fields,
+    color: options.leveledUp ? COLORS.LEVEL_UP : COLORS.SUCCESS,
   });
 }
