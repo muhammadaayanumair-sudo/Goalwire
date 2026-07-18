@@ -40,12 +40,14 @@ const command: Command = {
       }
 
       const progress = economyService.getLevelProgress(userDoc.economy.marketValue);
+      const tier = economyService.getMarketValueTier(userDoc.economy.marketValue);
       const pointsIntoLevel = userDoc.economy.marketValue - progress.currentThreshold;
       const pointsNeeded = progress.nextThreshold - progress.currentThreshold;
 
       const embed = fantasyEmbed({
         title: `${EMOJIS.STAR} ${targetUser.username}'s Wallet`,
         thumbnail: targetUser.displayAvatarURL(),
+        description: `${tier.emoji} **${tier.name}**`,
         fields: [
           { name: "Level", value: `${progress.level}`, inline: true },
           { name: "Market Value", value: `${userDoc.economy.marketValue}`, inline: true },
