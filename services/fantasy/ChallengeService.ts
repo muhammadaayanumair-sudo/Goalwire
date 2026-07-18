@@ -1,5 +1,6 @@
 import { Challenge, IChallenge } from "../../database/models/Challenge";
 import { FantasyTeam } from "../../database/models/FantasyTeam";
+import { economyService } from "../economy/EconomyService";
 import { logger } from "../../utils/logger";
 
 export class ChallengeError extends Error {
@@ -188,6 +189,18 @@ export class ChallengeService {
           : challenge.opponentDiscordId;
 
     await challenge.save();
+
+    if (challenge.winnerDiscordId) {
+      try {
+        await economyService.award(challenge.winnerDiscordId, challenge.winnerDiscordId, "challenge_won");
+      } catch (economyError) {
+        logger.warn("Failed to award economy reward for challenge win", {
+          error: economyError,
+          challengeId,
+          winnerDiscordId: challenge.winnerDiscordId,
+        });
+      }
+    }
 
     logger.info("Challenge completed", { challengeId, proposerScore, opponentScore });
     return challenge;
