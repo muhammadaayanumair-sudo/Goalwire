@@ -14,27 +14,61 @@ export type EarnSource =
   | "transfer_made"
   | "challenge_won"
   | "prediction_correct"
+  | "prediction_perfect"
+  | "weekly_challenge"
   | "command_used";
 
-const EARN_AMOUNTS: Record<EarnSource, { marketValue: number; tokens: number }> = {
-  daily_login: { marketValue: 10, tokens: 25 },
-  lineup_set: { marketValue: 5, tokens: 5 },
-  transfer_made: { marketValue: 3, tokens: 0 },
-  challenge_won: { marketValue: 20, tokens: 50 },
-  prediction_correct: { marketValue: 15, tokens: 30 },
-  command_used: { marketValue: 1, tokens: 0 },
-};
-
-const DAILY_STREAK_BONUS_TOKENS_PER_DAY = 5;
-const MAX_DAILY_STREAK_BONUS_DAYS = 10;
-const DAILY_COOLDOWN_HOURS = 20; // slightly under 24h so timezone drift doesn't lock users out
+interface EarnAmount {
+  marketValue: number;
+  tokens: number;
+}
 
 /**
- * Level curve: each level requires progressively more Market Value than the
- * last (simple quadratic curve). This is GoalX's own formula, not reverse
- * engineered from any competitor — the exact numbers are a starting point,
- * easy to retune later once real usage data exists.
+ * Reward scale adopted from a user-provided design doc, not reverse
+ * engineered from any competitor's real numbers (those aren't public).
+ * These are GoalX's own chosen values at this scale — easy to retune again
+ * once real usage data exists.
  */
+const EARN_AMOUNTS: Record<EarnSource, EarnAmount> = {
+  daily_login: { marketValue: 50, tokens: 20 },
+  lineup_set: { marketValue: 30, tokens: 15 },
+  transfer_made: { marketValue: 20, tokens: 10 },
+  challenge_won: { marketValue: 150, tokens: 100 },
+  prediction_correct: { marketValue: 200, tokens: 100 },
+  prediction_perfect: { marketValue: 400, tokens: 250 },
+  weekly_challenge: { marketValue: 1000, tokens: 500 },
+  command_used: { marketValue: 50, tokens: 0 },
+};
+
+const DAILY_STREAK_BONUS: EarnAmount = { marketValue: 500, tokens: 200 };
+const DAILY_STREAK_BONUS_THRESHOLD_DAYS = 7;
+const DAILY_COOLDOWN_HOURS = 20;
+
+// Command-XP abuse guard: a user can only earn command_used XP once per this
+// window, regardless of how many commands they run in between. Prevents
+// spamming any single command (or hopping between commands) to farm XP.
+const COMMAND_XP_COOLDOWN_MS = 10 * 60 * 1000; // 10 minutes
+const commandXpCooldowns = new Map<string, number>();
+
+interface MarketValueTier {
+  name: string;
+  emoji: string;
+  minMarketValue: number;
+}
+
+/**
+ * GoalX's own tier system — a deliberate design choice, not copied from any
+ * competitor. Tiers are cosmetic/status only right now (shown on /wallet);
+ * they don't yet unlock mechanical bonuses (better daily rewards, etc.) —
+ * that would be a separate, later feature, not silently included here.
+ */
+const MARKET_VALUE_TIERS: MarketValueTier[] = [
+  { name: "Bronze Scout", emoji: "🥉", minMarketValue: 0 },
+  { name: "Rising Analyst", emoji: "🥈", minMarketValue: 10000 },
+  { name: "Elite Scout", emoji: "🥇", minMarketValue: 50000 },
+  { name: "Football Expert", emoji: "💎", minMarketValue: 150000 },
+];
+
 function calculateLevel(marketValue: number): number {
   let level = 1;
   let threshold = 100;
@@ -85,10 +119,38 @@ export class EconomyService {
     };
   }
 
+  /**
+   * Awards command_used XP, but only once per COMMAND_XP_COOLDOWN_MS window
+   * per user — regardless of which command or how many were run in between.
+   * Returns null (no reward) if the user is still on cooldown, so callers
+   * can silently skip showing a reward line rather than award repeatedly.
+   */
+  public async awardCommandUsage(
+    discordId: string,
+    username: string,
+  ): Promise<{ marketValueGained: number; tokensGained: number; leveledUp: boolean; newLevel: number } | null> {
+    const lastAward = commandXpCooldowns.get(discordId);
+    const now = Date.now();
+
+    if (lastAward && now - lastAward < COMMAND_XP_COOLDOWN_MS) {
+      return null;
+    }
+
+    commandXpCooldowns.set(discordId, now);
+    return this.award(discordId, username, "command_used");
+  }
+
   public async claimDaily(
     discordId: string,
     username: string,
-  ): Promise<{ tokensGained: number; marketValueGained: number; streak: number; leveledUp: boolean; newLevel: number }> {
+  ): Promise<{
+    tokensGained: number;
+    marketValueGained: number;
+    streak: number;
+    streakBonusApplied: boolean;
+    leveledUp: boolean;
+    newLevel: number;
+  }> {
     const user = await this.getOrCreateUser(discordId, username);
 
     const now = new Date();
@@ -102,19 +164,17 @@ export class EconomyService {
         throw new EconomyError(`You've already claimed your daily reward. Try again in ${hoursRemaining}h.`);
       }
 
-      // Streak continues if claimed within 48h of the last claim, otherwise resets.
       const streakBroken = hoursSinceLastClaim > 48;
       user.economy.dailyStreak = streakBroken ? 1 : user.economy.dailyStreak + 1;
     } else {
       user.economy.dailyStreak = 1;
     }
 
-    const streakDays = Math.min(user.economy.dailyStreak, MAX_DAILY_STREAK_BONUS_DAYS);
     const base = EARN_AMOUNTS.daily_login;
-    const streakBonusTokens = streakDays * DAILY_STREAK_BONUS_TOKENS_PER_DAY;
+    const streakBonusApplied = user.economy.dailyStreak > 0 && user.economy.dailyStreak % DAILY_STREAK_BONUS_THRESHOLD_DAYS === 0;
 
-    const marketValueGained = base.marketValue;
-    const tokensGained = base.tokens + streakBonusTokens;
+    const marketValueGained = base.marketValue + (streakBonusApplied ? DAILY_STREAK_BONUS.marketValue : 0);
+    const tokensGained = base.tokens + (streakBonusApplied ? DAILY_STREAK_BONUS.tokens : 0);
 
     const previousLevel = calculateLevel(user.economy.marketValue);
 
@@ -131,6 +191,7 @@ export class EconomyService {
       tokensGained,
       marketValueGained,
       streak: user.economy.dailyStreak,
+      streakBonusApplied,
       leveledUp: newLevel > previousLevel,
       newLevel,
     };
@@ -177,6 +238,18 @@ export class EconomyService {
     const progress = (marketValue - threshold) / (nextThreshold - threshold);
 
     return { level, currentThreshold: threshold, nextThreshold, progress };
+  }
+
+  public getMarketValueTier(marketValue: number): MarketValueTier {
+    let currentTier = MARKET_VALUE_TIERS[0];
+
+    for (const tier of MARKET_VALUE_TIERS) {
+      if (marketValue >= tier.minMarketValue) {
+        currentTier = tier;
+      }
+    }
+
+    return currentTier;
   }
 
   public async getLeaderboard(
