@@ -73,17 +73,24 @@ async function executeTransfer(
     interaction.guildId,
     playerOutId,
     playerIn,
+    { discordUsername: interaction.user.username },
   );
+
+  const rewardLine = result.economyReward
+    ? `\n\n+${result.economyReward.marketValueGained} Market Value, +${result.economyReward.tokensGained} Tokens${
+        result.economyReward.leveledUp ? ` — ${EMOJIS.STAR} Level ${result.economyReward.newLevel}!` : ""
+      }`
+    : "";
 
   const embed =
     result.costPoints > 0
       ? warningEmbed(
-          `Transfer complete. **-${result.costPoints} points** deducted for using an extra transfer.\n\nFree transfers remaining: **${result.freeTransfersRemaining}**`,
+          `Transfer complete. **-${result.costPoints} points** deducted for using an extra transfer.\n\nFree transfers remaining: **${result.freeTransfersRemaining}**${rewardLine}`,
           "Transfer Complete (Cost Applied)",
         )
       : fantasyEmbed({
           title: `${EMOJIS.CHECK} Transfer Complete`,
-          description: `**${playerIn.name}** has joined your squad.\n\nFree transfers remaining: **${result.freeTransfersRemaining}**`,
+          description: `**${playerIn.name}** has joined your squad.\n\nFree transfers remaining: **${result.freeTransfersRemaining}**${rewardLine}`,
         });
 
   await interaction.editReply({ embeds: [embed], components: [] });
