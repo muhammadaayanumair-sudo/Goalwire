@@ -40,7 +40,7 @@ async function handleChannelSetupSelect(
   try {
     const selectedChannelId = select.values[0] ?? null;
 
-    const server = await Server.findOneAndUpdate(
+    await Server.findOneAndUpdate(
       { guildId: select.guildId },
       {
         $setOnInsert: {
