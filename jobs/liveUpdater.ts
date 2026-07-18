@@ -17,6 +17,8 @@ const BASE_INTERVAL_MS = 60000;
 const MAX_INTERVAL_MS = 300000;
 const IDLE_INTERVAL_MS = 180000;
 
+const VOIDABLE_STATUSES = new Set(["PST", "CANC", "ABD", "SUSP"]);
+
 function computePollInterval(liveFixtureCount: number): number {
   if (liveFixtureCount === 0) return IDLE_INTERVAL_MS;
   if (liveFixtureCount <= 2) return BASE_INTERVAL_MS;
@@ -27,6 +29,7 @@ function computePollInterval(liveFixtureCount: number): number {
 const seenEventKeys = new Map<number, Set<string>>();
 const seenStatusKeys = new Map<number, Set<string>>();
 const finishedFixtures = new Set<number>();
+const voidedFixtures = new Set<number>();
 
 let isPolling = false;
 let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
@@ -139,7 +142,26 @@ async function processFixture(
   fixture: FootballFixture,
   servers: { guildId: string; channels: { live?: string; goals?: string } }[],
 ): Promise<void> {
-  if (finishedFixtures.has(fixture.id)) return;
+  if (finishedFixtures.has(fixture.id) || voidedFixtures.has(fixture.id)) return;
+
+  if (VOIDABLE_STATUSES.has(fixture.status.short)) {
+    voidedFixtures.add(fixture.id);
+
+    try {
+      await predictionService.voidFixturePredictions(fixture.id);
+      logger.info("Voided predictions for postponed/cancelled fixture", {
+        fixtureId: fixture.id,
+        status: fixture.status.short,
+      });
+    } catch (error) {
+      logger.error("Failed to void predictions for postponed/cancelled fixture", {
+        error,
+        fixtureId: fixture.id,
+      });
+    }
+
+    return;
+  }
 
   if (!seenEventKeys.has(fixture.id)) seenEventKeys.set(fixture.id, new Set());
   if (!seenStatusKeys.has(fixture.id)) seenStatusKeys.set(fixture.id, new Set());
@@ -197,10 +219,6 @@ async function broadcastStatusChange(
       logger.warn("Failed to fetch goal scorers for full-time embed", { error, fixtureId: fixture.id });
     }
 
-    // Score any pending predictions for this fixture now that it's final.
-    // This is the ONLY place predictions get scored — see PredictionService's
-    // documented limitation: fixtures never polled as "live" here will never
-    // trigger this, even if users predicted them.
     try {
       const result = await predictionService.scoreFixturePredictions(
         fixture.id,
@@ -340,10 +358,11 @@ function cleanupFinishedFixtures(currentlyLiveFixtures: FootballFixture[]): void
   const liveIds = new Set(currentlyLiveFixtures.map((f) => f.id));
 
   for (const fixtureId of seenEventKeys.keys()) {
-    if (!liveIds.has(fixtureId) && finishedFixtures.has(fixtureId)) {
+    if (!liveIds.has(fixtureId) && (finishedFixtures.has(fixtureId) || voidedFixtures.has(fixtureId))) {
       seenEventKeys.delete(fixtureId);
       seenStatusKeys.delete(fixtureId);
       finishedFixtures.delete(fixtureId);
+      voidedFixtures.delete(fixtureId);
     }
   }
 }
