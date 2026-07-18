@@ -19,6 +19,27 @@ export const COLORS = {
   GOAL: 0x2ecc71,
   RED_CARD: 0xe74c3c,
   YELLOW_CARD: 0xf1c40f,
+
+  // Economy accents
+  ECONOMY_MV: 0x8e44ad,
+  ECONOMY_TOKENS: 0xf1c40f,
+  LEVEL_UP: 0xffd700,
+
+  // Prediction accents
+  PREDICTION: 0x6c5ce7,
+  PREDICTION_CORRECT: 0x00b894,
+  PREDICTION_EXACT: 0xfdcb6e,
+
+  // Tier accents (matches MARKET_VALUE_TIERS in EconomyService)
+  TIER_BRONZE: 0xcd7f32,
+  TIER_SILVER: 0xa8a9ad,
+  TIER_GOLD: 0xffd700,
+  TIER_DIAMOND: 0x00d4ff,
+
+  // Challenge accents
+  CHALLENGE_PENDING: 0xf39c12,
+  CHALLENGE_LIVE: 0xe74c3c,
+  CHALLENGE_WON: 0x2ecc71,
 } as const;
 
 export type ColorKey = keyof typeof COLORS;
