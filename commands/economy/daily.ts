@@ -18,14 +18,16 @@ const command: Command = {
     try {
       const result = await economyService.claimDaily(interaction.user.id, interaction.user.username);
 
-      const streakLine =
-        result.streak > 1 ? `\n🔥 **${result.streak}-day streak!**` : "";
+      const streakLine = result.streak > 1 ? `\n🔥 **${result.streak}-day streak!**` : "";
+      const bonusLine = result.streakBonusApplied
+        ? `\n${EMOJIS.STAR} **7-day streak bonus applied!**`
+        : "";
       const levelUpLine = result.leveledUp ? `\n${EMOJIS.STAR} You've reached **Level ${result.newLevel}**!` : "";
 
       await interaction.editReply({
         embeds: [
           successEmbed(
-            `+${result.marketValueGained} Market Value\n+${result.tokensGained} Tokens${streakLine}${levelUpLine}`,
+            `+${result.marketValueGained} Market Value\n+${result.tokensGained} Tokens${streakLine}${bonusLine}${levelUpLine}`,
             "Daily Reward Claimed",
           ),
         ],
