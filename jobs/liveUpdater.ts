@@ -1,6 +1,7 @@
 import { liveService } from "../services/football/LiveService";
 import { Server } from "../database/models/Server";
 import { User } from "../database/models/User";
+import { predictionService } from "../services/predictions/PredictionService";
 import {
   goalEmbed,
   cardEmbed,
@@ -194,6 +195,26 @@ async function broadcastStatusChange(
         }));
     } catch (error) {
       logger.warn("Failed to fetch goal scorers for full-time embed", { error, fixtureId: fixture.id });
+    }
+
+    // Score any pending predictions for this fixture now that it's final.
+    // This is the ONLY place predictions get scored — see PredictionService's
+    // documented limitation: fixtures never polled as "live" here will never
+    // trigger this, even if users predicted them.
+    try {
+      const result = await predictionService.scoreFixturePredictions(
+        fixture.id,
+        fixture.goals.home ?? 0,
+        fixture.goals.away ?? 0,
+      );
+      if (result.scoredCount > 0) {
+        logger.info("Predictions scored for finished fixture", {
+          fixtureId: fixture.id,
+          scoredCount: result.scoredCount,
+        });
+      }
+    } catch (error) {
+      logger.error("Failed to score predictions for finished fixture", { error, fixtureId: fixture.id });
     }
   }
 
