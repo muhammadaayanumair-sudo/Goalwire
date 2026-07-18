@@ -58,6 +58,22 @@ export const config = {
       key: env.POLLINATIONS_API_KEY,
       baseUrl: "https://image.pollinations.ai/prompt",
     },
+    oddsApi: {
+      key: env.ODDS_API_KEY,
+      baseUrl: "https://api.the-odds-api.com/v4",
+    },
+    sharpApi: {
+      key: env.SHARPAPI_KEY,
+      baseUrl: "https://api.sharpapi.io/v1",
+    },
+    oddsPapi: {
+      key: env.ODDSPAPI_KEY,
+      baseUrl: "https://api.oddspapi.com/v1",
+    },
+    oddsApiIo: {
+      key: env.ODDS_API_IO_KEY,
+      baseUrl: "https://api.odds-api.io/v1",
+    },
   },
 
   fantasy: {
@@ -76,6 +92,7 @@ export const config = {
     fixturesTtlSeconds: 3600,
     standingsTtlSeconds: 1800,
     newsTtlSeconds: 900,
+    oddsTtlSeconds: 300,
   },
 
   pagination: {
