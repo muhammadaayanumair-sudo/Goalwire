@@ -25,6 +25,11 @@ const envSchema = z.object({
 
   POLLINATIONS_API_KEY: z.string().optional(),
 
+  ODDS_API_KEY: z.string().optional(),
+  SHARPAPI_KEY: z.string().optional(),
+  ODDSPAPI_KEY: z.string().optional(),
+  ODDS_API_IO_KEY: z.string().optional(),
+
   NODE_ENV: z.enum(["development", "production", "test"]).default("development"),
   LOG_LEVEL: z.enum(["error", "warn", "info", "debug"]).default("info"),
 });
