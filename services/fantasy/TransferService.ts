@@ -1,5 +1,6 @@
 import { FantasyTeam, IFantasyTeam, IFantasyPlayer } from "../../database/models/FantasyTeam";
 import { config } from "../../config/config";
+import { economyService } from "../economy/EconomyService";
 import { logger } from "../../utils/logger";
 import type { FantasyPlayerPool } from "../../types/fantasy";
 import { POSITION_LIMITS } from "../../config/constants";
@@ -19,6 +20,7 @@ interface TransferPair {
 interface TransferOptions {
   useWildcard?: boolean;
   useFreeHit?: boolean;
+  discordUsername?: string;
 }
 
 interface TransferResult {
@@ -26,6 +28,7 @@ interface TransferResult {
   costPoints: number;
   transfersUsed: number;
   freeTransfersRemaining: number;
+  economyReward?: { marketValueGained: number; tokensGained: number; leveledUp: boolean; newLevel: number };
 }
 
 const MAX_OPTIMISTIC_RETRIES = 3;
@@ -103,15 +106,28 @@ export class TransferService {
           freeHit: Boolean(options.useFreeHit),
         });
 
+        let economyReward: TransferResult["economyReward"];
+        try {
+          const reward = await economyService.award(
+            discordId,
+            options.discordUsername ?? discordId,
+            "transfer_made",
+          );
+          economyReward = reward;
+        } catch (economyError) {
+          // A reward failure must never undo or block a transfer that already succeeded.
+          logger.warn("Failed to award economy reward for transfer", { error: economyError, discordId });
+        }
+
         return {
           team,
           costPoints,
           transfersUsed,
           freeTransfersRemaining,
+          economyReward,
         };
       } catch (error) {
-        const isVersionConflict =
-          error instanceof Error && error.name === "VersionError";
+        const isVersionConflict = error instanceof Error && error.name === "VersionError";
 
         if (isVersionConflict && attempt < MAX_OPTIMISTIC_RETRIES - 1) {
           logger.warn("Transfer version conflict, retrying", { discordId, guildId, attempt });
