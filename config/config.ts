@@ -62,17 +62,21 @@ export const config = {
       key: env.ODDS_API_KEY,
       baseUrl: "https://api.the-odds-api.com/v4",
     },
-    sharpApi: {
-      key: env.SHARPAPI_KEY,
-      baseUrl: "https://api.sharpapi.io/v1",
+    oddsApiIo: {
+      // Corrected: verified as /v3, not /v1 as originally guessed.
+      key: env.ODDS_API_IO_KEY,
+      baseUrl: "https://api.odds-api.io/v3",
     },
     oddsPapi: {
+      // Corrected: domain is oddspapi.io (not .com), path is /v4.
       key: env.ODDSPAPI_KEY,
-      baseUrl: "https://api.oddspapi.com/v1",
+      baseUrl: "https://api.oddspapi.io/v4",
     },
-    oddsApiIo: {
-      key: env.ODDS_API_IO_KEY,
-      baseUrl: "https://api.odds-api.io/v1",
+    sharpApi: {
+      // STILL UNVERIFIED — no real docs found for SharpAPI's odds product
+      // specifically. Do not rely on this until confirmed against real docs.
+      key: env.SHARPAPI_KEY,
+      baseUrl: "https://api.sharpapi.io/v1",
     },
   },
 
