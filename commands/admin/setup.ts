@@ -5,7 +5,6 @@ import {
   ChannelSelectMenuBuilder,
   ChannelType,
   PermissionFlagsBits,
-  RoleSelectMenuBuilder,
 } from "discord.js";
 import type { Command } from "../../types/discord";
 import { Server } from "../../database/models/Server";
